@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+
+jobs:
+  rust-msrv:
+    name: Rust MSRV
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Rust 1.86.0
+        uses: dtolnay/rust-toolchain@1.86.0
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Check workspace on MSRV
+        run: cargo check --workspace --all-targets --all-features
+
+  rust:
+    name: Rust (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+      - name: Check formatting
+        run: cargo fmt --check
+      - name: Run clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Build WASM crate
+        run: cargo build -p moine-wasm --target wasm32-unknown-unknown
+      - name: Test workspace
+        run: cargo test
+      - name: Test library-only root crate
+        run: cargo test -p moine --no-default-features
+      - name: Smoke artifact archive CLI
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        timeout-minutes: 10
+        run: bash scripts/ci-smoke-artifact-archive.sh
+
+  python-wheel:
+    name: Python wheel
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install uv and set Python
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+      - name: Build wheel
+        run: uv run --python ${{ matrix.python-version }} --isolated --no-project --with 'maturin>=1.9,<2' maturin build --out dist
+      - name: Run Python tests
+        run: uv run --python ${{ matrix.python-version }} --isolated --no-project --with 'pytest>=8,<9' --with dist/*.whl python -m pytest python/tests
+
+  python-quality:
+    name: Python quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install uv and set Python
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - name: Check Python lint
+        run: uv run --python 3.12 --isolated --no-project --with 'ruff>=0.14,<0.15' ruff check python
+      - name: Check Python formatting
+        run: uv run --python 3.12 --isolated --no-project --with 'ruff>=0.14,<0.15' ruff format --check python
+      - name: Check Python types
+        run: uv run --python 3.12 --isolated --no-project --with 'ty>=0.0.38,<0.1' ty check

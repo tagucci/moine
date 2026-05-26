@@ -1,0 +1,35 @@
+[package]
+name = "moine"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/moine"
+keywords.workspace = true
+categories.workspace = true
+description = "Public Rust API for Lattice Path Edit Distance and language adapters"
+readme = "../../README.md"
+include = ["Cargo.toml", "src/**/*.rs", "../../README.md"]
+
+[dependencies]
+moine-core = { version = "0.1.0", path = "../moine-core" }
+moine-ja = { version = "0.1.0", path = "../moine-ja" }
+moine-zh = { version = "0.1.0", path = "../moine-zh" }
+serde_yaml = "0.9"
+
+[dependencies.moine-cli]
+version = "0.1.0"
+path = "../moine-cli"
+optional = true
+
+[features]
+default = ["cli"]
+cli = ["dep:moine-cli"]
+
+[[bin]]
+name = "moine"
+path = "src/bin/moine.rs"
+required-features = ["cli"]
+doc = false

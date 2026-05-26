@@ -1,0 +1,27 @@
+[package]
+name = "moine-wasm"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://tagucci.github.io/moine/demo/"
+keywords.workspace = true
+categories.workspace = true
+description = "WebAssembly bindings for the moine browser demo"
+publish = false
+include = ["Cargo.toml", "src/**/*.rs"]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+name = "moine_wasm"
+path = "src/lib.rs"
+
+[dependencies]
+moine-core = { version = "0.1.0", path = "../moine-core" }
+moine-ja = { version = "0.1.0", path = "../moine-ja" }
+moine-zh = { version = "0.1.0", path = "../moine-zh" }
+serde_yaml = "0.9"
+sha2 = "0.10"
+wasm-bindgen = "0.2"

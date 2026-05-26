@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>mòine demo</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header>
+        <h1>mòine-demo</h1>
+      </header>
+
+      <section class="controls" aria-label="Comparison controls">
+        <label>
+          Language
+          <select id="language">
+            <option value="ja">Japanese</option>
+            <option value="zh">Chinese</option>
+          </select>
+        </label>
+
+        <div class="examples" aria-label="Examples">
+          <button type="button" data-lang="ja" data-left="moine" data-right="モイニャ">
+            moine / モイニャ
+          </button>
+          <button type="button" data-lang="ja" data-left="もいにゃ" data-right="モイニャ">
+            もいにゃ / モイニャ
+          </button>
+          <button type="button" data-lang="zh" data-left="weishiji" data-right="威士忌">
+            weishiji / 威士忌
+          </button>
+          <button type="button" data-lang="zh" data-left="布納哈奔" data-right="布納哈本">
+            布納哈奔 / 布納哈本
+          </button>
+        </div>
+      </section>
+
+      <section class="inputs" aria-label="Input strings">
+        <label>
+          Left
+          <textarea id="left" rows="4" spellcheck="false">moine</textarea>
+        </label>
+        <label>
+          Right
+          <textarea id="right" rows="4" spellcheck="false">モイニャ</textarea>
+        </label>
+      </section>
+
+      <div class="actions">
+        <button id="compare" type="button">Compare</button>
+        <span id="status" role="status" aria-live="polite"></span>
+      </div>
+
+      <section class="results" aria-label="Distance results">
+        <div>
+          <span>Levenshtein Distance</span>
+          <output id="levenshtein">-</output>
+        </div>
+        <div>
+          <span>Damerau-Levenshtein Distance</span>
+          <output id="damerau">-</output>
+        </div>
+        <div>
+          <span>Lattice Path Edit Distance</span>
+          <output id="lped">-</output>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

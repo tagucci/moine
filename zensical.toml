@@ -1,0 +1,48 @@
+[project]
+site_name = "mòine"
+site_url = "https://tagucci.github.io/moine/"
+site_description = "Lattice Path Edit Distance for romanization-aware Japanese and Chinese string comparison."
+site_author = "tagucci"
+docs_dir = "website"
+site_dir = "site"
+copyright = "mòine source code is licensed under either MIT or Apache-2.0."
+extra_css = ["stylesheets/extra.css"]
+nav = [
+  {"Home" = "index.md"},
+  {"Installation" = "installation.md"},
+  {"Python usage" = "usage.md"},
+  {"API reference" = "api.md"},
+  {"Rust usage" = "rust.md"},
+  {"Dictionary artifacts" = "artifacts.md"},
+  {"Demo" = "demo/"},
+  {"GitHub" = "https://github.com/tagucci/moine"},
+]
+
+[project.theme]
+logo = "assets/logo.svg"
+favicon = "assets/logo.svg"
+features = [
+  "navigation.tabs",
+  "navigation.sections",
+  "navigation.tracking",
+  "toc.follow",
+]
+palette.primary = "custom"
+palette.accent = "custom"
+
+[project.markdown_extensions.admonition]
+
+[project.markdown_extensions.attr_list]
+
+[project.markdown_extensions.def_list]
+
+[project.markdown_extensions.tables]
+
+[project.markdown_extensions.toc]
+permalink = true
+
+[project.markdown_extensions.pymdownx.highlight]
+
+[project.markdown_extensions.pymdownx.inlinehilite]
+
+[project.markdown_extensions.pymdownx.superfences]

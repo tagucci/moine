@@ -1,0 +1,20 @@
+[workspace]
+members = [
+    "crates/moine",
+    "crates/moine-core",
+    "crates/moine-ja",
+    "crates/moine-zh",
+    "crates/moine-cli",
+    "crates/moine-python",
+    "crates/moine-wasm",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.86"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/tagucci/moine"
+homepage = "https://github.com/tagucci/moine"
+keywords = ["edit-distance", "romanization", "japanese", "chinese", "nlp"]
+categories = ["text-processing", "algorithms"]

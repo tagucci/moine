@@ -1,0 +1,18 @@
+[package]
+name = "moine-core"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/moine-core"
+keywords.workspace = true
+categories.workspace = true
+description = "Language-independent lattice path edit distance core for moine"
+readme = "README.md"
+include = ["Cargo.toml", "README.md", "src/**/*.rs"]
+
+[lib]
+name = "moine_core"
+path = "src/lib.rs"

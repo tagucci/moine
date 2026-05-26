@@ -1,0 +1,27 @@
+version: 1
+entries:
+  - surface: 鬼滅の刃
+    readings:
+      - キメツノヤイバ
+
+  - surface: 印刷
+    readings:
+      - インサツ
+
+  - surface: 茶道具
+    readings:
+      - チャドウグ
+      - チャドーグ
+
+  - surface: 東京都
+    readings:
+      - トウキョウト
+
+  - surface: 愛知県コロナ
+    readings:
+      - アイチケンコロナ
+
+  - surface: 愛知家コロナ
+    readings:
+      - アイチケコロナ
+      - アイチイエコロナ

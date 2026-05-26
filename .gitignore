@@ -1,0 +1,11 @@
+target/
+dist/
+site/
+demo/pkg/
+demo/dictionaries/
+.venv/
+uv.lock
+python/**/*.so
+python/**/__pycache__/
+
+.DS_Store
