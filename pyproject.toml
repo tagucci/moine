@@ -61,3 +61,7 @@ manifest-path = "crates/moine-python/Cargo.toml"
 module-name = "moine._moine"
 python-source = "python"
 features = ["extension-module"]
+include = [
+    { path = "LICENSE-APACHE", format = "sdist" },
+    { path = "LICENSE-MIT", format = "sdist" },
+]
