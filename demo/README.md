@@ -34,7 +34,9 @@ scripts/build-pages-site.sh
 The script builds the Zensical documentation site, builds `crates/moine-wasm`,
 generates `site/demo/pkg`, and copies local indexed dictionary artifacts from
 `dist/moine-unidic-cwj-202512` and `dist/moine-cedict-20260520` into
-`site/demo/dictionaries` when they are present.
+`site/demo/dictionaries` when they are present. If local artifacts are missing,
+the script downloads the published release archives and copies the same files
+from them.
 
 ## Serve Locally
 
