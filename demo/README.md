@@ -22,7 +22,7 @@ copies this demo into `site/demo`.
 Install `wasm-bindgen-cli` with the same version used by the Rust dependency:
 
 ```bash
-cargo install -f wasm-bindgen-cli --version 0.2.121
+cargo install -f wasm-bindgen-cli --version 0.2.122
 ```
 
 Then build the local Pages layout:
