@@ -153,6 +153,12 @@ fn segment(input: &str) -> Result<Vec<Unit>, JaLatticeError> {
 
     while i < chars.len() {
         let ch = chars[i];
+        if let Some(normalized) = normalize_whitespace_char(ch) {
+            units.push(Unit::Ascii(normalized));
+            i += 1;
+            continue;
+        }
+
         if ch.is_ascii() {
             units.push(Unit::Ascii(ch));
             i += 1;
@@ -179,6 +185,10 @@ fn segment(input: &str) -> Result<Vec<Unit>, JaLatticeError> {
     }
 
     Ok(units)
+}
+
+fn normalize_whitespace_char(ch: char) -> Option<char> {
+    ch.is_whitespace().then_some(' ')
 }
 
 /// Expands kana or ASCII romaji input into explicit romaji paths.
@@ -582,6 +592,18 @@ mod tests {
 
         assert_eq!(trace.distance, 0);
         assert_eq!(symbols_to_string(&trace.left_symbols()), "insat");
+    }
+
+    #[test]
+    fn unicode_whitespace_normalizes_to_ascii_space() {
+        for whitespace in [' ', '\u{00a0}', '\u{2003}', '\u{2009}', '\u{3000}'] {
+            let left = format!("ピーテッド{whitespace}ウイスキー");
+            let right = format!("ぴーてっど{whitespace}ういすきー");
+            let left_lattice = romaji_lattice(&left).expect("unicode whitespace should build");
+            let right_lattice = romaji_lattice(&right).expect("unicode whitespace should build");
+
+            assert_eq!(distance(&left_lattice, &right_lattice), 0);
+        }
     }
 
     #[test]

@@ -38,6 +38,8 @@
 //!
 #![deny(missing_docs)]
 
+mod pinyin;
+
 use std::borrow::Cow;
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet, HashMap};
 use std::error::Error;
@@ -57,6 +59,12 @@ use moine_core::{
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+
+use pinyin::{
+    can_build_direct_pinyin_path, direct_pinyin_lattice, normalize_artifact_reading,
+    normalize_direct_ascii,
+};
+pub use pinyin::{normalize_pinyin, pinyin_lattice_from_reading_paths};
 
 const ARTIFACT_PAYLOAD_SCHEMA_VERSION: u32 = 1;
 const ARTIFACT_PAYLOAD_TYPE: &str = "moine.zh.reading-index.surface-readings";
@@ -1584,44 +1592,6 @@ fn max_normalized_similarity(left_paths: &[String], right_paths: &[String]) -> f
         .fold(0.0, f64::max)
 }
 
-/// Builds a pinyin lattice from expanded reading paths.
-///
-/// Each path contributes one complete pinyin string to the compact lattice.
-/// Segment boundaries are used before this step and are not represented in the
-/// returned lattice.
-pub fn pinyin_lattice_from_reading_paths(
-    paths: &[PinyinReadingPath],
-) -> Result<Lattice, CnLatticeError> {
-    if paths.is_empty() {
-        return Err(CnLatticeError::EmptyReadings);
-    }
-
-    Ok(Lattice::from_symbol_paths_compact(paths.iter().map(
-        |path| {
-            path.joined_reading
-                .chars()
-                .map(|ch| ch as moine_core::Symbol)
-                .collect::<Vec<_>>()
-        },
-    )))
-}
-
-/// Normalizes a whitespace-separated CC-CEDICT pinyin field.
-///
-/// In [`PinyinView::NoTone`], tone digits that follow Latin letters are
-/// removed while numeric tokens such as `11` are preserved. In
-/// [`PinyinView::Tone3`], tone digits are retained.
-pub fn normalize_pinyin(raw: &str, view: PinyinView) -> String {
-    let mut normalized = String::new();
-    for token in raw.split_whitespace() {
-        normalized.push_str(&normalize_pinyin_token(token, view));
-    }
-    match view {
-        PinyinView::NoTone => strip_no_tone_digits(&normalized),
-        PinyinView::Tone3 => normalized,
-    }
-}
-
 fn compare_lattices(
     left: &str,
     right: &str,
@@ -1640,58 +1610,6 @@ fn compare_lattices(
         lattice_damerau,
         combined: surface_damerau.min(lattice),
     }
-}
-
-fn direct_pinyin_lattice(input: &str) -> Option<Lattice> {
-    if input.is_empty() || !can_build_direct_pinyin_path(input) {
-        return None;
-    }
-    Some(Lattice::from_paths([normalize_direct_ascii(input)]))
-}
-
-fn normalize_pinyin_token(token: &str, view: PinyinView) -> String {
-    let lowered = token.to_lowercase().replace("u:", "v").replace('ü', "v");
-    let contains_letters = lowered.chars().any(|ch| ch.is_ascii_alphabetic());
-    if view == PinyinView::NoTone && contains_letters {
-        lowered
-            .chars()
-            .filter(|ch| !matches!(ch, '1'..='5'))
-            .collect()
-    } else {
-        lowered
-    }
-}
-
-fn normalize_direct_ascii(input: &str) -> String {
-    input.to_lowercase().replace("u:", "v")
-}
-
-fn normalize_artifact_reading(reading: &str, view: PinyinView) -> String {
-    let lowered = reading
-        .to_lowercase()
-        .replace("u:", "v")
-        .replace('ü', "v")
-        .chars()
-        .filter(|ch| !ch.is_whitespace())
-        .collect::<String>();
-    match view {
-        PinyinView::NoTone => strip_no_tone_digits(&lowered),
-        PinyinView::Tone3 => lowered,
-    }
-}
-
-fn strip_no_tone_digits(reading: &str) -> String {
-    let mut previous = None;
-    let mut normalized = String::with_capacity(reading.len());
-    for ch in reading.chars() {
-        if matches!(ch, '1'..='5') && previous.is_some_and(|prev: char| prev.is_ascii_alphabetic())
-        {
-            continue;
-        }
-        normalized.push(ch);
-        previous = Some(ch);
-    }
-    normalized
 }
 
 fn char_boundaries(text: &str) -> Vec<usize> {
@@ -1987,10 +1905,6 @@ fn read_indexed_readings_at_bytes(
     Ok(readings)
 }
 
-fn can_build_direct_pinyin_path(surface: &str) -> bool {
-    !surface.is_empty() && surface.is_ascii()
-}
-
 /// Computes the SHA-256 file digest string for a Chinese artifact payload file.
 pub fn artifact_file_digest_path(path: impl AsRef<Path>) -> Result<String, std::io::Error> {
     let file = File::open(path)?;
@@ -2281,6 +2195,24 @@ mod tests {
         assert_eq!(distances.lattice, 0);
         assert_eq!(distances.lattice_damerau, 0);
         assert!(distances.surface_damerau > distances.lattice);
+    }
+
+    #[test]
+    fn direct_pinyin_normalizes_unicode_whitespace() {
+        let cedict = "威士忌 威士忌 [Wei1 shi4 ji4] /whisky/\n";
+        let index = CedictReadingIndex::from_cedict_reader(cedict.as_bytes()).unwrap();
+        for whitespace in [' ', '\u{00a0}', '\u{2003}', '\u{2009}', '\u{3000}'] {
+            let input = format!("weishi{whitespace}ji");
+            let distances = compare_with_cedict_index(
+                &input,
+                "威士忌",
+                &index,
+                PinyinReadingOptions::default(),
+            )
+            .unwrap();
+
+            assert_eq!(distances.lattice, 0);
+        }
     }
 
     #[test]
