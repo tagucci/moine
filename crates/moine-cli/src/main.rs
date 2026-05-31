@@ -12,7 +12,9 @@ use std::time::Duration;
 use std::time::Instant;
 
 use flate2::{read::GzDecoder, write::GzEncoder, Compression, GzBuilder};
-use moine_core::{damerau_levenshtein_str, distance_with_trace, levenshtein_str};
+use moine_core::{
+    damerau_levenshtein_str, distance_with_trace, levenshtein_str, try_distance_with_trace,
+};
 use moine_ja::{
     artifact_file_digest_path, compare_with_overrides, compare_with_unidic_index,
     unidic_or_direct_lattice, DictionaryReadingOptions, DictionaryReadingStats, JapaneseDistance,
@@ -1962,7 +1964,10 @@ fn run_compare(args: Vec<String>) -> Result<(), Box<dyn Error>> {
             compare_with_unidic_index(&options.left, &options.right, &index, dictionary_options)?;
         let left_lattice = unidic_or_direct_lattice(&options.left, &index, dictionary_options)?;
         let right_lattice = unidic_or_direct_lattice(&options.right, &index, dictionary_options)?;
-        let trace = distance_with_trace(&left_lattice, &right_lattice);
+        let (trace, trace_error) = match try_distance_with_trace(&left_lattice, &right_lattice) {
+            Ok(trace) => (Some(trace), None),
+            Err(err) => (None, Some(err.to_string())),
+        };
         let left_expansion = query_reading_expansion(&options.left, &index, dictionary_options);
         let right_expansion = query_reading_expansion(&options.right, &index, dictionary_options);
         Some(DictComparisonResult {
@@ -1970,6 +1975,7 @@ fn run_compare(args: Vec<String>) -> Result<(), Box<dyn Error>> {
             dictionary_options,
             distances,
             trace,
+            trace_error,
             left_expansion,
             right_expansion,
         })
@@ -1993,7 +1999,7 @@ fn run_compare(args: Vec<String>) -> Result<(), Box<dyn Error>> {
     println!("surface_damerau:     {}", surface_distances.surface_damerau);
 
     if let Some((distances, trace)) = override_result {
-        print_lattice_result("ja_override_lattice", distances, &trace);
+        print_lattice_result("ja_override_lattice", distances, Some(&trace), None);
     }
 
     if let Some(result) = dict_result {
@@ -2009,7 +2015,12 @@ fn run_compare(args: Vec<String>) -> Result<(), Box<dyn Error>> {
         );
         print_query_reading_stats("left_expansion", &result.left_expansion);
         print_query_reading_stats("right_expansion", &result.right_expansion);
-        print_lattice_result("ja_dict_lattice", result.distances, &result.trace);
+        print_lattice_result(
+            "ja_dict_lattice",
+            result.distances,
+            result.trace.as_ref(),
+            result.trace_error.as_deref(),
+        );
     }
 
     Ok(())
@@ -2025,15 +2036,20 @@ fn best_path(trace: &moine_core::DistanceTrace) -> BestPath {
 fn print_lattice_result(
     label: &str,
     distances: JapaneseDistance,
-    trace: &moine_core::DistanceTrace,
+    trace: Option<&moine_core::DistanceTrace>,
+    trace_error: Option<&str>,
 ) {
     println!();
     println!("{label}: {}", distances.lattice);
     println!("{label}_damerau: {}", distances.lattice_damerau);
     println!("{label}_combined: {}", distances.combined);
-    println!("{label}_best_path:");
-    println!("  left:  {}", symbols_to_string(&trace.left_symbols()));
-    println!("  right: {}", symbols_to_string(&trace.right_symbols()));
+    if let Some(trace) = trace {
+        println!("{label}_best_path:");
+        println!("  left:  {}", symbols_to_string(&trace.left_symbols()));
+        println!("  right: {}", symbols_to_string(&trace.right_symbols()));
+    } else if let Some(error) = trace_error {
+        println!("{label}_best_path: unavailable ({error})");
+    }
 }
 
 fn query_reading_expansion(
@@ -2041,12 +2057,24 @@ fn query_reading_expansion(
     index: &UnidicReadingIndex,
     options: DictionaryReadingOptions,
 ) -> QueryReadingExpansion {
-    if moine_ja::romaji_lattice(input).is_ok() {
+    let has_direct_romaji = moine_ja::romaji_lattice(input).is_ok();
+    if has_direct_romaji && !input.chars().any(|ch| ch.is_ascii_alphanumeric()) {
         return QueryReadingExpansion::DirectRomaji;
     }
 
-    let expansion = index.hybrid_reading_paths_with_stats(input, options);
+    let dictionary_expansion = index.reading_paths_with_stats(input, options);
+    let expansion = if dictionary_expansion.paths.is_empty() {
+        index.hybrid_reading_paths_with_stats(input, options)
+    } else {
+        dictionary_expansion
+    };
+
+    if expansion.paths.is_empty() && has_direct_romaji {
+        return QueryReadingExpansion::DirectRomaji;
+    }
+
     QueryReadingExpansion::Dictionary {
+        has_direct_romaji,
         path_count: expansion.paths.len(),
         stats: expansion.stats,
     }
@@ -2055,7 +2083,12 @@ fn query_reading_expansion(
 fn print_query_reading_stats(label: &str, expansion: &QueryReadingExpansion) {
     match expansion {
         QueryReadingExpansion::DirectRomaji => println!("{label}: direct_romaji"),
-        QueryReadingExpansion::Dictionary { path_count, stats } => {
+        QueryReadingExpansion::Dictionary {
+            has_direct_romaji,
+            path_count,
+            stats,
+        } => {
+            println!("{label}_direct_romaji: {has_direct_romaji}");
             print_reading_stats(label, stats);
             println!("{label}_paths: {path_count}");
         }
@@ -2744,7 +2777,8 @@ struct DictComparisonResult {
     source: DictComparisonSource,
     dictionary_options: DictionaryReadingOptions,
     distances: JapaneseDistance,
-    trace: moine_core::DistanceTrace,
+    trace: Option<moine_core::DistanceTrace>,
+    trace_error: Option<String>,
     left_expansion: QueryReadingExpansion,
     right_expansion: QueryReadingExpansion,
 }
@@ -2797,6 +2831,7 @@ impl DictionaryReadingOptionOverrides {
 enum QueryReadingExpansion {
     DirectRomaji,
     Dictionary {
+        has_direct_romaji: bool,
         path_count: usize,
         stats: DictionaryReadingStats,
     },

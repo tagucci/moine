@@ -805,10 +805,10 @@ impl UnidicReadingIndex {
                 continue;
             }
 
-            by_surface
-                .entry(surface.to_string())
-                .or_default()
-                .insert(reading.to_string());
+            insert_surface_reading(&mut by_surface, surface, reading);
+            if let Some(normalized_surface) = normalize_ascii_width(surface) {
+                insert_surface_reading(&mut by_surface, &normalized_surface, reading);
+            }
         }
 
         let readings_by_surface = by_surface
@@ -1110,6 +1110,24 @@ impl UnidicReadingIndex {
     /// Returns readings for `surface` and preserves indexed artifact decode
     /// errors.
     pub fn try_readings(
+        &self,
+        surface: &str,
+    ) -> Result<Option<Cow<'_, [String]>>, UnidicArtifactPayloadError> {
+        if let Some(readings) = self.try_readings_exact(surface)? {
+            return Ok(Some(readings));
+        }
+
+        let Some(normalized_surface) = normalize_ascii_width(surface) else {
+            return Ok(None);
+        };
+        if normalized_surface == surface {
+            return Ok(None);
+        }
+
+        self.try_readings_exact(&normalized_surface)
+    }
+
+    fn try_readings_exact(
         &self,
         surface: &str,
     ) -> Result<Option<Cow<'_, [String]>>, UnidicArtifactPayloadError> {
@@ -1695,6 +1713,40 @@ fn char_boundaries(text: &str) -> Vec<usize> {
         .map(|(index, _)| index)
         .chain(std::iter::once(text.len()))
         .collect()
+}
+
+fn insert_surface_reading(
+    by_surface: &mut HashMap<String, BTreeSet<String>>,
+    surface: &str,
+    reading: &str,
+) {
+    by_surface
+        .entry(surface.to_string())
+        .or_default()
+        .insert(reading.to_string());
+}
+
+fn normalize_ascii_width(input: &str) -> Option<String> {
+    let mut normalized = String::with_capacity(input.len());
+    let mut changed = false;
+
+    for ch in input.chars() {
+        let normalized_ch = normalize_ascii_width_char(ch);
+        changed |= normalized_ch != ch;
+        normalized.push(normalized_ch);
+    }
+
+    changed.then_some(normalized)
+}
+
+fn normalize_ascii_width_char(ch: char) -> char {
+    match ch {
+        '\u{3000}' => ' ',
+        '\u{ff01}'..='\u{ff5e}' => {
+            char::from_u32(ch as u32 - 0xfee0).expect("fullwidth ASCII maps to ASCII")
+        }
+        _ => ch,
+    }
 }
 
 fn lex_csv_reader(reader: impl Read) -> csv::Reader<impl Read> {
@@ -2820,6 +2872,39 @@ entries:
             index.readings("刃").as_deref(),
             Some(&["ハ".to_string(), "バ".to_string()][..])
         );
+    }
+
+    #[test]
+    fn fullwidth_ascii_surfaces_are_indexed_under_halfwidth_aliases() {
+        let csv = "\
+ＷＨＩＳＫＹ,1,2,3,名詞,普通名詞,一般,*,*,*,ウイスキー,ＷＨＩＳＫＹ,ＷＨＩＳＫＹ,ウイスキー,ＷＨＩＳＫＹ,ウイスキー,外
+ＷＨＩＳＫＥＹ,1,2,3,名詞,普通名詞,一般,*,*,*,ウイスキー,ＷＨＩＳＫＥＹ,ＷＨＩＳＫＥＹ,ウイスキー,ＷＨＩＳＫＥＹ,ウイスキー,外
+ＭＡＬＴ,1,2,3,名詞,普通名詞,一般,*,*,*,モルト,ＭＡＬＴ,ＭＡＬＴ,モルト,ＭＡＬＴ,モルト,外
+abc,1,2,3,名詞,固有名詞,一般,*,*,*,エービーシー,abc,abc,エービーシー,abc,エービーシー,外
+";
+        let index = UnidicReadingIndex::from_lex_csv_reader(csv.as_bytes()).unwrap();
+
+        assert_eq!(
+            index.readings("ＷＨＩＳＫＹ").as_deref(),
+            Some(&["ウイスキー".to_string()][..])
+        );
+        assert_eq!(
+            index.readings("WHISKY").as_deref(),
+            Some(&["ウイスキー".to_string()][..])
+        );
+        assert_eq!(
+            index.readings("WHISKEY").as_deref(),
+            Some(&["ウイスキー".to_string()][..])
+        );
+        assert_eq!(
+            index.readings("ＷＨＩＳＫＥＹ").as_deref(),
+            Some(&["ウイスキー".to_string()][..])
+        );
+        assert_eq!(
+            index.readings("MALT").as_deref(),
+            Some(&["モルト".to_string()][..])
+        );
+        assert_eq!(index.readings("abc"), None);
     }
 
     #[test]

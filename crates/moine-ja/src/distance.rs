@@ -1,10 +1,12 @@
+use std::collections::BTreeSet;
+
 use moine_core::{
     damerau_distance, damerau_levenshtein_str, distance, levenshtein_str,
     normalized_similarity_str, Lattice,
 };
 
 use crate::overrides::OverrideDictionary;
-use crate::romaji::{romaji_lattice, romaji_paths, JaLatticeError};
+use crate::romaji::{romaji_paths, JaLatticeError};
 use crate::unidic::{
     romaji_paths_from_reading_paths, DictionaryReadingOptions, UnidicReadingIndex,
 };
@@ -69,19 +71,8 @@ pub fn unidic_or_direct_lattice(
     index: &UnidicReadingIndex,
     options: DictionaryReadingOptions,
 ) -> Result<Lattice, JaLatticeError> {
-    if let Ok(lattice) = romaji_lattice(input) {
-        return Ok(lattice);
-    }
-
-    if let Some(lattice) = index.romaji_lattice(input, options)? {
-        return Ok(lattice);
-    }
-
-    if let Some(lattice) = index.hybrid_romaji_lattice(input, options)? {
-        return Ok(lattice);
-    }
-
-    romaji_lattice(input)
+    let paths = unidic_or_direct_romaji_paths(input, index, options)?;
+    Lattice::try_from_paths(paths).map_err(JaLatticeError::from)
 }
 
 /// Returns romaji paths from direct input, dictionary readings, or both.
@@ -90,27 +81,42 @@ pub fn unidic_or_direct_romaji_paths(
     index: &UnidicReadingIndex,
     options: DictionaryReadingOptions,
 ) -> Result<Vec<String>, JaLatticeError> {
-    if let Ok(paths) = romaji_paths(input) {
-        return Ok(paths);
+    let mut paths = BTreeSet::new();
+    if let Ok(direct_paths) = romaji_paths(input) {
+        if !contains_ascii_alphanumeric(input) {
+            return Ok(direct_paths);
+        }
+        paths.extend(direct_paths);
     }
 
-    let paths = index
+    let dictionary_paths = index
         .try_reading_paths_with_stats(input, options)
         .map_err(|err| JaLatticeError::ArtifactPayload(err.to_string()))?
         .paths;
-    if !paths.is_empty() {
-        return romaji_paths_from_reading_paths(&paths);
+    let has_dictionary_paths = !dictionary_paths.is_empty();
+    if has_dictionary_paths {
+        paths.extend(romaji_paths_from_reading_paths(&dictionary_paths)?);
     }
 
-    let paths = index
-        .try_hybrid_reading_paths_with_stats(input, options)
-        .map_err(|err| JaLatticeError::ArtifactPayload(err.to_string()))?
-        .paths;
+    if !has_dictionary_paths {
+        let hybrid_paths = index
+            .try_hybrid_reading_paths_with_stats(input, options)
+            .map_err(|err| JaLatticeError::ArtifactPayload(err.to_string()))?
+            .paths;
+        if !hybrid_paths.is_empty() {
+            paths.extend(romaji_paths_from_reading_paths(&hybrid_paths)?);
+        }
+    }
+
     if !paths.is_empty() {
-        return romaji_paths_from_reading_paths(&paths);
+        return Ok(paths.into_iter().collect());
     }
 
     romaji_paths(input)
+}
+
+fn contains_ascii_alphanumeric(input: &str) -> bool {
+    input.chars().any(|ch| ch.is_ascii_alphanumeric())
 }
 
 fn max_normalized_similarity(left_paths: &[String], right_paths: &[String]) -> f64 {
@@ -189,6 +195,45 @@ mod tests {
 
         assert_eq!(distances.lattice, 0);
         assert!(distances.surface_damerau > distances.lattice);
+    }
+
+    #[test]
+    fn unidic_index_combines_direct_ascii_and_dictionary_word_readings() {
+        let csv = "\
+ＷＨＩＳＫＹ,1,2,3,名詞,普通名詞,一般,*,*,*,ウイスキー,ＷＨＩＳＫＹ,ＷＨＩＳＫＹ,ウイスキー,ＷＨＩＳＫＹ,ウイスキー,外
+";
+        let index = UnidicReadingIndex::from_lex_csv_reader(csv.as_bytes()).unwrap();
+        let options = DictionaryReadingOptions::default();
+
+        let dictionary =
+            compare_with_unidic_index("WHISKY", "ウイスキー", &index, options).unwrap();
+        let fullwidth_dictionary =
+            compare_with_unidic_index("ＷＨＩＳＫＹ", "ウイスキー", &index, options).unwrap();
+        let direct = compare_with_unidic_index("WHISKY", "WHISKY", &index, options).unwrap();
+
+        assert_eq!(dictionary.lattice, 0);
+        assert_eq!(fullwidth_dictionary.lattice, 0);
+        assert_eq!(direct.lattice, 0);
+    }
+
+    #[test]
+    fn unidic_index_uses_width_aliases_for_whisky_terms() {
+        let csv = "\
+ＷＨＩＳＫＹ,1,2,3,名詞,普通名詞,一般,*,*,*,ウイスキー,ＷＨＩＳＫＹ,ＷＨＩＳＫＹ,ウイスキー,ＷＨＩＳＫＹ,ウイスキー,外
+ＭＡＬＴ,1,2,3,名詞,普通名詞,一般,*,*,*,モルト,ＭＡＬＴ,ＭＡＬＴ,モルト,ＭＡＬＴ,モルト,外
+";
+        let index = UnidicReadingIndex::from_lex_csv_reader(csv.as_bytes()).unwrap();
+        let options = DictionaryReadingOptions::default();
+
+        for (left, right) in [
+            ("ＷＨＩＳＫＹ", "ウイスキー"),
+            ("WHISKY", "ウイスキー"),
+            ("ＭＡＬＴ", "モルト"),
+            ("MALT", "モルト"),
+        ] {
+            let distances = compare_with_unidic_index(left, right, &index, options).unwrap();
+            assert_eq!(distances.lattice, 0, "{left} should match {right}");
+        }
     }
 
     #[test]

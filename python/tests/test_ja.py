@@ -53,6 +53,7 @@ def write_test_bundle(
     file_digest=None,
 ):
     entries = [
+        ("WHISKY", ["ウイスキー"]),
         ("印刷", ["インサツ"]),
         ("モイニャ", ["モイニャ"]),
         ("ブナハーブン", ["ブナハーブン"]),
@@ -63,6 +64,9 @@ def write_test_bundle(
 schema_version: 1
 payload_type: moine.unidic.reading-index.surface-readings
 entries:
+- surface: WHISKY
+  readings:
+  - ウイスキー
 - surface: 印刷
   readings:
   - インサツ
@@ -108,7 +112,7 @@ build:
   max_readings_per_surface: null
   exclude_ascii_surfaces: true
   exclude_symbol_pos: true
-  entries: 3
+  entries: {len(entries)}
 query_defaults:
   max_span_chars: 8
   max_paths: 128
@@ -220,6 +224,8 @@ def test_ja_bundle_helpers_use_metadata_defaults(tmp_path):
     assert dictionary.distance("いんさt", "印刷") == 1
     assert directory_dictionary.distance("いんさt", "印刷") == 1
     assert native_directory_dictionary.distance("いんさt", "印刷") == 1
+    assert dictionary.distance("WHISKY", "ウイスキー") == 0
+    assert dictionary.distance("WHISKY", "WHISKY") == 0
     assert dictionary.distance("いんさt", "印刷", score_cutoff=0) == 1
     assert dictionary.damerau_distance("モイネ", "モニエ") == 1
     assert dictionary.damerau_distance("モイネ", "モニエ", score_cutoff=0) == 1
