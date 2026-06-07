@@ -236,8 +236,8 @@ cargo run -q -p moine-cli -- unidic-artifact-bundle \
 The current loader maps the file, copies the FST bytes into the `fst` runtime
 map, and lazily decodes reading blocks by offset during lookup. It still
 validates the indexed payload on load and still supports the same canonical
-logical payload checksum. In the local JWTD-oriented measurement, this reduced
-full UniDic dictionary load time from about `3.95s` for the eager binary
+logical payload checksum. In the local full-UniDic measurement, this reduced
+dictionary load time from about `3.95s` for the eager binary
 payload to about `1.91s` for the indexed payload. Per-call comparison was
 slightly slower because readings are decoded lazily at lookup time instead of
 being pre-materialized in a `HashMap`.
@@ -679,8 +679,8 @@ process total:           2.10-2.56 s real
 Python `Dictionary.load_bundle(...)` measured against the same bundle loaded in
 1916.976 ms and then averaged 0.149 ms per `distance(...)` call over the same
 five pairs. Later full-UniDic indexed FST measurement reduced load time from
-about 3.95 s to about 1.91 s on the JWTD-oriented benchmark path, with a small
-per-call slowdown from lazy reading-block decode. This makes the indexed
+about 3.95 s to about 1.91 s on the same local validation workload, with a
+small per-call slowdown from lazy reading-block decode. This makes the indexed
 payload worth carrying into the first public artifact while keeping the eager
 binary payload as a simpler fallback.
 

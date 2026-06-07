@@ -6,11 +6,13 @@ details out of the public-facing README and Website.
 ## Workspace
 
 ```text
-crates/moine       public Rust umbrella crate
-crates/moine-core  language-independent lattice and edit-distance core
-crates/moine-ja    Japanese kana, romaji, override, and UniDic adapters
-crates/moine-zh    Chinese pinyin and CC-CEDICT adapters
-crates/moine-cli   diagnostic CLI and report generation
+crates/moine         public Rust umbrella crate and cargo-installable binary
+crates/moine-core    language-independent lattice and edit-distance core
+crates/moine-ja      Japanese kana, romaji, override, and UniDic adapters
+crates/moine-zh      Chinese pinyin and CC-CEDICT adapters
+crates/moine-cli     CLI implementation, diagnostics, downloads, and artifacts
+crates/moine-python  PyO3 extension module backing the Python package
+crates/moine-wasm    wasm-bindgen bindings for the browser demo
 ```
 
 ## Development Checks
@@ -75,19 +77,6 @@ cargo run -q -p moine-cli -- unidic-csv-sequences \
   --longest-only \
   --max-readings-per-segment 16 \
   --max-paths 128
-```
-
-Generate the Japanese validation report:
-
-```bash
-cargo run -q -p moine-cli -- japanese-report \
-  --overrides crates/moine-ja/tests/resources/overrides.yaml \
-  --lex-csv unidic-cwj-202512_full/lex.csv \
-  --longest-only \
-  --max-paths 128 \
-  --max-readings-per-surface 16 \
-  --max-readings-per-segment 16 \
-  --output reports/japanese_validation.md
 ```
 
 The UniDic commands require a local full UniDic package containing `lex.csv`.
@@ -237,9 +226,10 @@ intentionally outside the initial API.
 `partial_alignment` defaults to `metric="ratio"` and reports Python character
 offsets.
 
-`moine.ja.process.extract(...)` and `extract_one(...)` are thin candidate
-scoring helpers over the dictionary-backed Japanese scorers. Choices may be an
-iterable of strings or a mapping from arbitrary keys to strings. Results are
+`moine.ja.process.extract(...)`, `moine.zh.process.extract(...)`, and
+`extract_one(...)` are thin candidate scoring helpers over the
+language-specific dictionary-backed scorers. Choices may be an iterable of
+strings or a mapping from arbitrary keys to strings. Results are
 `(choice, score, index_or_key)` tuples and preserve input order for ties.
 
 ## Rust API Sketch
