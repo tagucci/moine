@@ -25,10 +25,6 @@ apart as strings, but stay close in reading space.
 0
 ```
 
-The project is inspired by Nobuhiro Kaji's EMNLP 2023 Industry Track paper,
-"Lattice Path Edit Distance: A Romanization-aware Edit Distance for Extracting
-Misspelling-Correction Pairs from Japanese Search Query Logs".
-
 ## Name
 
 The project name comes from `Moine`, a peated malt from Bunnahabhain and one of
@@ -230,7 +226,6 @@ possible reading paths before edit distance is computed.
     url = "https://aclanthology.org/2023.emnlp-industry.24/",
     doi = "10.18653/v1/2023.emnlp-industry.24",
     pages = "233--242",
-    abstract = "Edit distance has been successfully used to extract training data, i.e., misspelling-correction pairs, of spelling correction models from search query logs in languages including English. However, the success does not readily apply to Japanese, where misspellings are often dissimilar to correct spellings due to the romanization-based input methods. To address this problem, we introduce lattice path edit distance, which utilizes romanization lattices to efficiently consider all possible romanized forms of input strings. Empirical experiments using Japanese search query logs demonstrated that the lattice path edit distance outperformed baseline methods including the standard edit distance combined with an existing transliterator and morphological analyzer. A training data collection pipeline that uses the lattice path edit distance has been deployed in production at our search engine for over a year."
 }
 ```
 
