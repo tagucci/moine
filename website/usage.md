@@ -163,9 +163,10 @@ dictionary.ratio("布呐哈本", "布納哈本")
 
 ## Candidate Extraction
 
-`moine.ja.process.extract(...)` and `extract_one(...)` provide lightweight
-candidate scoring helpers over the Japanese dictionary-backed scorers. Choices
-may be an iterable of strings or a mapping from arbitrary keys to strings.
+`moine.ja.process.extract(...)`, `moine.zh.process.extract(...)`, and
+`extract_one(...)` provide lightweight candidate scoring helpers over the
+language-specific dictionary-backed scorers. Choices may be an iterable of
+strings or a mapping from arbitrary keys to strings.
 
 ```python
 from moine.ja import Dictionary, process
@@ -181,6 +182,22 @@ matches = process.extract(
 )
 print(matches)
 # [('ピート', 0, 'peat')]
+```
+
+```python
+from moine.zh import Dictionary, process
+
+dictionary = Dictionary.load_bundle("/path/to/moine-cedict-20260520")
+
+matches = process.extract(
+    "weishiji",
+    {"bunnahabhain": "布納哈本", "whisky": "威士忌"},
+    dictionary=dictionary,
+    scorer="ratio",
+    score_cutoff=1.0,
+)
+print(matches)
+# [('威士忌', 1.0, 'whisky')]
 ```
 
 Results are `(choice, score, index_or_key)` tuples and preserve input order for

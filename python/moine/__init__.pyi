@@ -16,6 +16,7 @@ Metric = Literal[
 ]
 PartialMetric = Literal["distance", "ratio"]
 _Dictionary = JapaneseDictionary | ChineseDictionary
+__version__: str
 
 class PartialAlignment(NamedTuple):
     score: int | float

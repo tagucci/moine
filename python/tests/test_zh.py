@@ -6,9 +6,12 @@ from moine.zh import (
     Dictionary,
     damerau_distance,
     distance,
+    extract,
+    extract_one,
     load_bundle,
     normalized_distance,
     normalized_similarity,
+    process,
     ratio,
     within_distance,
 )
@@ -180,6 +183,70 @@ def test_top_level_partial_zh_uses_reading_span_default(tmp_path):
         dest_start=2,
         dest_end=10,
     )
+
+
+def test_zh_process_extract_distance_and_ratio(tmp_path):
+    dictionary = load_bundle(write_test_bundle(tmp_path)[0])
+
+    distance_results = process.extract(
+        "weishiji",
+        ["布納哈本", "威士忌"],
+        dictionary=dictionary,
+        scorer="distance",
+        score_cutoff=0,
+    )
+    assert distance_results == [("威士忌", 0, 1)]
+    assert (
+        extract_one(
+            "weishiji",
+            ["布納哈本"],
+            dictionary=dictionary,
+            scorer="distance",
+            score_cutoff=0,
+        )
+        is None
+    )
+
+    ratio_results = extract(
+        "weishiji",
+        {"bunnahabhain": "布納哈本", "whisky": "威士忌"},
+        dictionary=dictionary,
+        scorer="ratio",
+        score_cutoff=1.0,
+    )
+    assert ratio_results == [("威士忌", 1.0, "whisky")]
+    assert process.extract(
+        "bunahaben",
+        {"traditional": "布納哈本", "simplified": "布那哈本", "whisky": "威士忌"},
+        dictionary=dictionary,
+        scorer="distance",
+        limit=None,
+        scorer_kwargs={"max_paths": 128},
+        score_cutoff=0,
+    ) == [("布納哈本", 0, "traditional"), ("布那哈本", 0, "simplified")]
+    with pytest.raises(TypeError, match="score_cutoff must be an int"):
+        process.extract(
+            "weishiji",
+            ["威士忌"],
+            dictionary=dictionary,
+            scorer="damerau_distance",
+            score_cutoff=0.5,
+        )
+    with pytest.raises(ValueError, match="score_cutoff"):
+        process.extract(
+            "weishiji",
+            ["威士忌"],
+            dictionary=dictionary,
+            scorer="ratio",
+            score_cutoff=1.5,
+        )
+    with pytest.raises(TypeError, match="unexpected scorer_kwargs key"):
+        process.extract(
+            "weishiji",
+            ["威士忌"],
+            dictionary=dictionary,
+            scorer_kwargs={"processor": str.lower},
+        )
 
 
 def test_zh_bundle_rejects_file_digest_mismatch(tmp_path):

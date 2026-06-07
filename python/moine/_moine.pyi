@@ -1,5 +1,7 @@
 from collections.abc import Sequence
 
+__version__: str
+
 _DistanceAlignmentTuple = tuple[int, int, int, int, int]
 _RatioAlignmentTuple = tuple[float, int, int, int, int]
 
