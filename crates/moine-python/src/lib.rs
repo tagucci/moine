@@ -2025,6 +2025,7 @@ fn apply_normalized_distance_cutoff(distance: f64, score_cutoff: Option<f64>) ->
 
 #[pymodule]
 fn _moine(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add_function(wrap_pyfunction!(distance, m)?)?;
     m.add_function(wrap_pyfunction!(damerau_distance, m)?)?;
     m.add_function(wrap_pyfunction!(normalized_distance, m)?)?;

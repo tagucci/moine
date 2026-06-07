@@ -234,10 +234,12 @@ Returns the configured default dictionary for a language, or `None`.
 ## Language-Specific Modules
 
 `moine.ja`
-: Japanese helpers and the UniDic-backed `Dictionary` alias.
+: Japanese helpers, the UniDic-backed `Dictionary` alias, and
+  `process.extract(...)` / `extract_one(...)` candidate scoring helpers.
 
 `moine.zh`
-: Chinese helpers and the CC-CEDICT-backed `Dictionary` alias.
+: Chinese helpers, the CC-CEDICT-backed `Dictionary` alias, and
+  `process.extract(...)` / `extract_one(...)` candidate scoring helpers.
 
 Rust users should use the crate documentation on
 [docs.rs](https://docs.rs/moine).

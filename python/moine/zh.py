@@ -1,9 +1,11 @@
 """Chinese pinyin helpers for moine."""
 
 import os
+from collections.abc import Mapping
 from os import PathLike
 
 from ._moine import ChineseDictionary
+from ._process import Choices, ExtractResult, ProcessNamespace, Score, Scorer, ScorerFunctions
 
 StrPath = str | PathLike[str]
 
@@ -187,14 +189,71 @@ def ratio(
     )
 
 
+_SCORERS = ScorerFunctions(
+    distance=distance,
+    damerau_distance=damerau_distance,
+    normalized_distance=normalized_distance,
+    normalized_similarity=normalized_similarity,
+    ratio=ratio,
+)
+process = ProcessNamespace(_SCORERS)
+
+
+def extract(
+    query: str,
+    choices: Choices,
+    *,
+    dictionary: ChineseDictionary,
+    scorer: Scorer = "distance",
+    limit: int | None = 5,
+    score_cutoff: Score | None = None,
+    scorer_kwargs: Mapping[str, object] | None = None,
+) -> list[ExtractResult]:
+    """Return the best matching choices for a query using a Chinese scorer."""
+
+    return process.extract(
+        query,
+        choices,
+        dictionary=dictionary,
+        scorer=scorer,
+        limit=limit,
+        score_cutoff=score_cutoff,
+        scorer_kwargs=scorer_kwargs,
+    )
+
+
+def extract_one(
+    query: str,
+    choices: Choices,
+    *,
+    dictionary: ChineseDictionary,
+    scorer: Scorer = "distance",
+    score_cutoff: Score | None = None,
+    scorer_kwargs: Mapping[str, object] | None = None,
+) -> ExtractResult | None:
+    """Return the best matching choice for a query, or None when none match."""
+
+    return process.extract_one(
+        query,
+        choices,
+        dictionary=dictionary,
+        scorer=scorer,
+        score_cutoff=score_cutoff,
+        scorer_kwargs=scorer_kwargs,
+    )
+
+
 __all__ = [
     "ChineseDictionary",
     "Dictionary",
     "damerau_distance",
     "distance",
+    "extract",
+    "extract_one",
     "load_bundle",
     "normalized_distance",
     "normalized_similarity",
+    "process",
     "ratio",
     "within_damerau_distance",
     "within_distance",

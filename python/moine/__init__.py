@@ -2,6 +2,8 @@
 
 import os
 from collections.abc import Iterable
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _metadata_version
 from pathlib import Path
 from threading import RLock
 from typing import Literal, NamedTuple
@@ -35,6 +37,10 @@ _LANGUAGE_DEFAULT_PREFIXES = {
     "ja": ("moine-unidic",),
     "zh": ("moine-cedict",),
 }
+try:
+    __version__ = _metadata_version("moine")
+except PackageNotFoundError:
+    __version__ = _moine.__version__
 
 
 class PartialAlignment(NamedTuple):
@@ -798,6 +804,7 @@ __all__ = [
     "Metric",
     "PartialAlignment",
     "PartialMetric",
+    "__version__",
     "cdist",
     "clear_default_dictionary",
     "Dictionary",
