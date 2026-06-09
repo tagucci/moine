@@ -507,7 +507,7 @@ dependencies = [
 
 [[package]]
 name = "moine"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "moine-cli",
  "moine-core",
@@ -518,7 +518,7 @@ dependencies = [
 
 [[package]]
 name = "moine-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "clap",
  "flate2",
@@ -534,11 +534,11 @@ dependencies = [
 
 [[package]]
 name = "moine-core"
-version = "0.1.0"
+version = "0.1.1"
 
 [[package]]
 name = "moine-ja"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "csv",
  "fst",
@@ -551,7 +551,7 @@ dependencies = [
 
 [[package]]
 name = "moine-python"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "moine-core",
  "moine-ja",
@@ -562,7 +562,7 @@ dependencies = [
 
 [[package]]
 name = "moine-wasm"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "moine-core",
  "moine-ja",
@@ -574,7 +574,7 @@ dependencies = [
 
 [[package]]
 name = "moine-zh"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "fst",
  "memmap2",
