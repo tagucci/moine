@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use clap::error::ErrorKind;
 use flate2::{write::GzEncoder, Compression};
+use moine_core::{distance_with_trace, Lattice};
 use moine_ja::UnidicReadingField;
 use moine_zh::PinyinView;
 
@@ -309,6 +310,72 @@ fn parses_compare_artifact_payload_options() {
         Some(16)
     );
     assert!(options.dictionary_options.longest_match_only);
+}
+
+#[test]
+fn parses_compare_romaji_lattice_options() {
+    let options = CompareOptions::parse(vec![
+        "--left".to_string(),
+        "きめつのやいば".to_string(),
+        "--right".to_string(),
+        "鬼滅の刃".to_string(),
+        "--artifact-metadata".to_string(),
+        "dist/moine-unidic-cwj-202512/metadata.yaml".to_string(),
+        "--romaji-lattice".to_string(),
+        "/tmp/moine-romaji-lattice.svg".to_string(),
+        "--output-format".to_string(),
+        "svg".to_string(),
+    ])
+    .unwrap();
+
+    assert_eq!(
+        options.romaji_lattice,
+        Some("/tmp/moine-romaji-lattice.svg".to_string())
+    );
+    assert_eq!(options.output_format, RomajiLatticeOutputFormat::Svg);
+}
+
+#[test]
+fn renders_romaji_lattice_dot_with_best_path() {
+    let left_lattice = Lattice::from_paths(["insatu", "insatsu"]);
+    let right_lattice = Lattice::from_paths(["insatsu"]);
+    let trace = distance_with_trace(&left_lattice, &right_lattice);
+    let dot = romaji_lattice_dot(&RomajiLatticeData {
+        left_input: "印刷".to_string(),
+        right_input: "いんさつ".to_string(),
+        left_lattice,
+        right_lattice,
+        distance: trace.distance,
+        trace: Some(trace),
+        trace_error: None,
+    });
+
+    assert!(dot.contains("digraph moine_romaji_lattice"));
+    assert!(dot.contains("subgraph cluster_left"));
+    assert!(dot.contains("subgraph cluster_right"));
+    assert!(!dot.contains("source="));
+    assert!(dot.contains("best_left=insatsu"));
+    assert!(dot.contains("best_right=insatsu"));
+    assert!(dot.contains("label=\"s\""));
+    assert!(dot.contains("color=\"#9a5b38\""));
+    assert!(dot.contains("penwidth=3.0"));
+}
+
+#[test]
+fn romaji_lattice_graph_reports_missing_dot_command() {
+    let temp = TempDir::new("moine-cli-test").unwrap();
+    let err = write_romaji_lattice_graph_with_dot_command(
+        &temp.path().join("lattice.svg"),
+        "digraph g {}\n",
+        RomajiLatticeOutputFormat::Svg,
+        "__moine_missing_dot__",
+    )
+    .expect_err("missing dot command should be reported");
+
+    let message = err.to_string();
+    assert!(message.contains("required command \"__moine_missing_dot__\""));
+    assert!(message.contains("install Graphviz"));
+    assert!(message.contains("--output-format dot"));
 }
 
 #[test]

@@ -79,6 +79,21 @@ cargo run -q -p moine-cli -- unidic-csv-sequences \
   --max-paths 128
 ```
 
+Render the romaji lattice used by comparison as SVG:
+
+```bash
+cargo run -q -p moine-cli -- compare \
+  --left "蒸溜所" \
+  --right "蒸留所" \
+  --artifact-metadata dist/moine-unidic-cwj-202512/metadata.yaml \
+  --romaji-lattice lattice.svg \
+  --output-format svg
+```
+
+`--output-format svg` and `--output-format png` call the Graphviz `dot`
+command. Use `--output-format dot` when you want DOT text without depending on
+a local Graphviz installation.
+
 The UniDic commands require a local full UniDic package containing `lex.csv`.
 Dictionary packages are not committed to this repository.
 

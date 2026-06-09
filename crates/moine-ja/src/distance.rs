@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use moine_core::{
     damerau_distance, damerau_levenshtein_str, distance, levenshtein_str,
-    normalized_similarity_str, Lattice,
+    normalized_similarity_str, Lattice, Symbol,
 };
 
 use crate::overrides::OverrideDictionary;
@@ -72,7 +72,7 @@ pub fn unidic_or_direct_lattice(
     options: DictionaryReadingOptions,
 ) -> Result<Lattice, JaLatticeError> {
     let paths = unidic_or_direct_romaji_paths(input, index, options)?;
-    Lattice::try_from_paths(paths).map_err(JaLatticeError::from)
+    lattice_from_romaji_paths(paths)
 }
 
 /// Returns romaji paths from direct input, dictionary readings, or both.
@@ -117,6 +117,13 @@ pub fn unidic_or_direct_romaji_paths(
 
 fn contains_ascii_alphanumeric(input: &str) -> bool {
     input.chars().any(|ch| ch.is_ascii_alphanumeric())
+}
+
+fn lattice_from_romaji_paths(paths: Vec<String>) -> Result<Lattice, JaLatticeError> {
+    let symbol_paths = paths
+        .iter()
+        .map(|path| path.chars().map(|ch| ch as Symbol).collect::<Vec<Symbol>>());
+    Lattice::try_from_symbol_paths_compact(symbol_paths).map_err(JaLatticeError::from)
 }
 
 fn max_normalized_similarity(left_paths: &[String], right_paths: &[String]) -> f64 {
@@ -195,6 +202,19 @@ mod tests {
 
         assert_eq!(distances.lattice, 0);
         assert!(distances.surface_damerau > distances.lattice);
+    }
+
+    #[test]
+    fn unidic_lattice_compacts_shared_romaji_branches() {
+        let csv = "\
+鬼滅,1,2,3,名詞,固有名詞,一般,*,*,*,キメツ,鬼滅,鬼滅,キメツ,鬼滅,キメツ,固
+";
+        let index = UnidicReadingIndex::from_lex_csv_reader(csv.as_bytes()).unwrap();
+        let lattice =
+            unidic_or_direct_lattice("鬼滅", &index, DictionaryReadingOptions::default()).unwrap();
+
+        assert_eq!(lattice.node_count(), 8);
+        assert_eq!(distance(&lattice, &Lattice::from_paths(["kimetsu"])), 0);
     }
 
     #[test]
