@@ -438,6 +438,10 @@ fn parses_unidic_artifact_bundle_options() {
     assert_eq!(options.artifact_name, "moine-unidic-cwj-202512");
     assert_eq!(options.payload_format, ArtifactPayloadFormat::Yaml);
     assert_eq!(
+        options.index_options.reading_field,
+        UnidicReadingField::Pron
+    );
+    assert_eq!(
         options.license_dir,
         Some("unidic-cwj-202512_full/license".to_string())
     );
@@ -469,6 +473,10 @@ fn parses_binary_payload_format_for_metadata() {
     .unwrap();
 
     assert_eq!(options.payload_format, ArtifactPayloadFormat::Binary);
+    assert_eq!(
+        options.index_options.reading_field,
+        UnidicReadingField::Pron
+    );
     assert_eq!(
         options.payload_file_name,
         "moine-unidic-cwj-202512.readings.moinebin"

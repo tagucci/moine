@@ -2327,7 +2327,7 @@ source:
   version: test
   lex_csv: test.csv
 build:
-  reading_field: lform
+  reading_field: pron
   max_readings_per_surface: null
   exclude_ascii_surfaces: true
   exclude_symbol_pos: true
@@ -2416,7 +2416,7 @@ source:
   version: test
   lex_csv: test.csv
 build:
-  reading_field: lform
+  reading_field: pron
   max_readings_per_surface: null
   exclude_ascii_surfaces: true
   exclude_symbol_pos: true
@@ -2474,7 +2474,7 @@ source:
   version: test
   lex_csv: test.csv
 build:
-  reading_field: lform
+  reading_field: pron
   max_readings_per_surface: null
   exclude_ascii_surfaces: true
   exclude_symbol_pos: true
@@ -2522,7 +2522,7 @@ source:
   version: test
   lex_csv: test.csv
 build:
-  reading_field: lform
+  reading_field: pron
   max_readings_per_surface: null
   exclude_ascii_surfaces: true
   exclude_symbol_pos: true

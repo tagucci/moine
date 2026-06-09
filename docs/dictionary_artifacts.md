@@ -53,8 +53,9 @@ cargo run -q -p moine-cli -- unidic-artifact-metadata \
 
 `unidic-artifact-metadata` does not write a payload file, so it omits
 `file_digest_algorithm` and `file_digest`. `unidic-artifact-bundle` fills those
-fields after writing the payload. Observed bundle metadata for the local full
-CSV package:
+fields after writing the payload. UniDic artifact builders use the `pron`
+reading field by default. Observed bundle metadata for the local full CSV
+package:
 
 ```yaml
 schema_version: 1
@@ -73,7 +74,7 @@ source:
   version: '2025.12'
   lex_csv: unidic-cwj-202512_full/lex.csv
 build:
-  reading_field: lform
+  reading_field: pron
   max_readings_per_surface: 16
   exclude_ascii_surfaces: true
   exclude_symbol_pos: true
@@ -107,6 +108,7 @@ entries:
   readings:
   - ジン
   - ハ
+  - バ
   - ヤイバ
 ```
 

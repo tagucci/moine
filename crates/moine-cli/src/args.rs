@@ -635,7 +635,7 @@ impl PinyinReadingArgs {
 
 #[derive(Clone, Debug, Args)]
 struct UnidicIndexArgs {
-    #[arg(long = "field", value_parser = parse_unidic_reading_field_clap, value_name = "lform|pron", default_value = "lform")]
+    #[arg(long = "field", value_parser = parse_unidic_reading_field_clap, value_name = "lform|pron", default_value = "pron")]
     field: UnidicReadingField,
     #[arg(long = "max-readings-per-surface")]
     max_readings_per_surface: Option<usize>,
