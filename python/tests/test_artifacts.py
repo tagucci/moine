@@ -58,7 +58,7 @@ source:
   version: test
   lex_csv: lex.csv
 build:
-  reading_field: lform
+  reading_field: pron
   max_readings_per_surface: 16
   exclude_ascii_surfaces: true
   exclude_symbol_pos: true

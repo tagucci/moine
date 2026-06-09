@@ -382,7 +382,7 @@ impl UnidicReadingField {
 impl Default for UnidicIndexOptions {
     fn default() -> Self {
         Self {
-            reading_field: UnidicReadingField::LForm,
+            reading_field: UnidicReadingField::Pron,
             max_readings_per_surface: None,
             exclude_ascii_surfaces: true,
             exclude_symbol_pos: true,
@@ -2942,7 +2942,7 @@ abc,1,2,3,名詞,固有名詞,一般,*,*,*,エービーシー,abc,abc,エービ�
         assert_eq!(
             paths,
             vec![DictionaryReadingPath {
-                joined_reading: "チャドウグ".to_string(),
+                joined_reading: "チャドーグ".to_string(),
                 segments: vec![
                     DictionaryReadingSegment {
                         surface: "茶".to_string(),
@@ -2950,7 +2950,7 @@ abc,1,2,3,名詞,固有名詞,一般,*,*,*,エービーシー,abc,abc,エービ�
                     },
                     DictionaryReadingSegment {
                         surface: "道具".to_string(),
-                        reading: "ドウグ".to_string(),
+                        reading: "ドーグ".to_string(),
                     },
                 ],
             }]
@@ -3061,6 +3061,6 @@ abc,1,2,3,名詞,固有名詞,一般,*,*,*,エービーシー,abc,abc,エービ�
             },
         );
 
-        assert_eq!(readings, vec!["チャドウグ".to_string()]);
+        assert_eq!(readings, vec!["チャドーグ".to_string()]);
     }
 }
