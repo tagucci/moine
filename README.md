@@ -172,6 +172,11 @@ maintainer-facing tools for producing and checking release assets. They are
 documented in [docs/development.md](docs/development.md) and
 [docs/release_process.md](docs/release_process.md).
 
+Japanese comparison diagnostics can emit romaji lattice graphs with
+`--romaji-lattice <PATH> --output-format <dot|svg|png>`. Writing SVG or PNG
+graphs requires the Graphviz `dot` command to be available in `PATH`; DOT output
+does not require that runtime dependency.
+
 ## Documentation
 
 - [Project documentation](https://tagucci.github.io/moine/)

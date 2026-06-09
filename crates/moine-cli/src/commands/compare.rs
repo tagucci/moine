@@ -1,10 +1,12 @@
+use std::collections::BTreeSet;
 use std::error::Error;
 use std::fs;
+use std::io;
 use std::io::Write as _;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use moine_core::{distance_with_trace, try_distance_with_trace};
+use moine_core::{distance_with_trace, try_distance_with_trace, DistanceTrace, Lattice, Symbol};
 use moine_ja::{
     compare_with_overrides, compare_with_unidic_index, unidic_or_direct_lattice,
     DictionaryReadingOptions, DictionaryReadingStats, JapaneseDistance, OverrideDictionary,
@@ -15,17 +17,22 @@ use moine_zh::{
     PinyinReadingOptions, PinyinReadingStats,
 };
 
+use crate::archive::{ensure_output_parent, write_output_file};
 use crate::args::{
     max_readings_per_segment_label, max_readings_per_surface_label, unidic_reading_field_name,
     ArtifactPayloadFormat, CedictReadingsOptions, CedictSequencesOptions, ChineseCompareOptions,
-    CliError, CompareOptions, UnidicCsvReadingsOptions, UnidicCsvSequencesOptions,
-    UnidicReadingsOptions,
+    CliError, CompareOptions, RomajiLatticeOutputFormat, UnidicCsvReadingsOptions,
+    UnidicCsvSequencesOptions, UnidicReadingsOptions,
 };
 use crate::commands::unidic_artifact::{
     dictionary_options_from_metadata, load_artifact_payload_by_format,
     load_unidic_artifact_bundle_for_runtime,
 };
 use crate::commands::zh_artifact::load_zh_index;
+
+const ROMAJI_DOT_BEST_PATH_COLOR: &str = "#9a5b38";
+const ROMAJI_DOT_DEFAULT_NODE_COLOR: &str = "#495057";
+const ROMAJI_DOT_MUTED_EDGE_COLOR: &str = "#868e96";
 
 pub(crate) fn run_cedict_readings(options: CedictReadingsOptions) -> Result<(), Box<dyn Error>> {
     let index =
@@ -215,6 +222,8 @@ pub(crate) fn run_unidic_readings(options: UnidicReadingsOptions) -> Result<(), 
 }
 
 pub(crate) fn run_compare(options: CompareOptions) -> Result<(), Box<dyn Error>> {
+    let mut romaji_lattice_data = None;
+
     let override_result = if let Some(overrides_path) = &options.overrides {
         let override_yaml = fs::read_to_string(overrides_path)?;
         let overrides = OverrideDictionary::from_yaml_str(&override_yaml)?;
@@ -222,6 +231,17 @@ pub(crate) fn run_compare(options: CompareOptions) -> Result<(), Box<dyn Error>>
         let left_lattice = overrides.romaji_lattice(&options.left)?;
         let right_lattice = overrides.romaji_lattice(&options.right)?;
         let trace = distance_with_trace(&left_lattice, &right_lattice);
+        if options.romaji_lattice.is_some() {
+            romaji_lattice_data = Some(RomajiLatticeData {
+                left_input: options.left.clone(),
+                right_input: options.right.clone(),
+                left_lattice: left_lattice.clone(),
+                right_lattice: right_lattice.clone(),
+                distance: distances.lattice,
+                trace: Some(trace.clone()),
+                trace_error: None,
+            });
+        }
         Some((distances, trace))
     } else {
         None
@@ -282,6 +302,17 @@ pub(crate) fn run_compare(options: CompareOptions) -> Result<(), Box<dyn Error>>
             Ok(trace) => (Some(trace), None),
             Err(err) => (None, Some(err.to_string())),
         };
+        if options.romaji_lattice.is_some() {
+            romaji_lattice_data = Some(RomajiLatticeData {
+                left_input: options.left.clone(),
+                right_input: options.right.clone(),
+                left_lattice: left_lattice.clone(),
+                right_lattice: right_lattice.clone(),
+                distance: distances.lattice,
+                trace: trace.clone(),
+                trace_error: trace_error.clone(),
+            });
+        }
         let left_expansion = query_reading_expansion(&options.left, &index, dictionary_options);
         let right_expansion = query_reading_expansion(&options.right, &index, dictionary_options);
         Some(DictComparisonResult {
@@ -334,6 +365,24 @@ pub(crate) fn run_compare(options: CompareOptions) -> Result<(), Box<dyn Error>>
             result.distances,
             result.trace.as_ref(),
             result.trace_error.as_deref(),
+        );
+    }
+
+    if let Some(path) = &options.romaji_lattice {
+        let data = romaji_lattice_data
+            .as_ref()
+            .expect("comparison method should provide lattices for graph output");
+        let dot = romaji_lattice_dot(data);
+        match options.output_format {
+            RomajiLatticeOutputFormat::Dot => write_output_file(Path::new(path), &dot)?,
+            RomajiLatticeOutputFormat::Svg | RomajiLatticeOutputFormat::Png => {
+                write_romaji_lattice_graph(Path::new(path), &dot, options.output_format)?;
+            }
+        }
+        println!();
+        println!(
+            "romaji_lattice: {path} ({})",
+            options.output_format.as_str()
         );
     }
 
@@ -570,6 +619,252 @@ pub(crate) fn symbols_to_string(symbols: &[moine_core::Symbol]) -> String {
         .collect()
 }
 
+pub(crate) fn romaji_lattice_dot(data: &RomajiLatticeData) -> String {
+    let left_symbols = data.trace.as_ref().map(DistanceTrace::left_symbols);
+    let right_symbols = data.trace.as_ref().map(DistanceTrace::right_symbols);
+    let left_best_arcs = left_symbols
+        .as_deref()
+        .map(|symbols| best_arc_keys(&data.left_lattice, symbols))
+        .unwrap_or_default();
+    let right_best_arcs = right_symbols
+        .as_deref()
+        .map(|symbols| best_arc_keys(&data.right_lattice, symbols))
+        .unwrap_or_default();
+    let left_best_nodes = best_nodes(&left_best_arcs);
+    let right_best_nodes = best_nodes(&right_best_arcs);
+
+    let best_path_label = match (&left_symbols, &right_symbols, &data.trace_error) {
+        (Some(left), Some(right), _) => format!(
+            "best_left={}\\nbest_right={}",
+            dot_escape(&symbols_to_string(left)),
+            dot_escape(&symbols_to_string(right))
+        ),
+        (_, _, Some(error)) => format!("best path unavailable: {}", dot_escape(error)),
+        _ => "best path unavailable".to_string(),
+    };
+    let graph_label = format!("distance={}\\n{}", data.distance, best_path_label);
+
+    let mut dot = String::new();
+    dot.push_str("digraph moine_romaji_lattice {\n");
+    dot.push_str("  rankdir=LR;\n");
+    dot.push_str("  graph [fontname=\"Helvetica\", labelloc=\"t\", label=\"");
+    dot.push_str(&graph_label);
+    dot.push_str("\"];\n");
+    dot.push_str(&format!(
+        "  node [fontname=\"Helvetica\", shape=circle, width=0.48, fixedsize=true, color=\"{ROMAJI_DOT_DEFAULT_NODE_COLOR}\"];\n",
+    ));
+    dot.push_str(&format!(
+        "  edge [fontname=\"Helvetica\", color=\"{ROMAJI_DOT_DEFAULT_NODE_COLOR}\", arrowsize=0.7];\n\n"
+    ));
+
+    append_lattice_cluster(
+        &mut dot,
+        "right",
+        "RIGHT",
+        &data.right_input,
+        &data.right_lattice,
+        &right_best_arcs,
+        &right_best_nodes,
+    );
+    dot.push('\n');
+    append_lattice_cluster(
+        &mut dot,
+        "left",
+        "LEFT",
+        &data.left_input,
+        &data.left_lattice,
+        &left_best_arcs,
+        &left_best_nodes,
+    );
+    dot.push_str("}\n");
+    dot
+}
+
+pub(crate) fn write_romaji_lattice_graph(
+    path: &Path,
+    dot: &str,
+    output_format: RomajiLatticeOutputFormat,
+) -> Result<(), Box<dyn Error>> {
+    write_romaji_lattice_graph_with_dot_command(path, dot, output_format, "dot")
+}
+
+pub(crate) fn write_romaji_lattice_graph_with_dot_command(
+    path: &Path,
+    dot: &str,
+    output_format: RomajiLatticeOutputFormat,
+    dot_command: &str,
+) -> Result<(), Box<dyn Error>> {
+    let Some(graphviz_format) = output_format.graphviz_format() else {
+        write_output_file(path, dot)?;
+        return Ok(());
+    };
+
+    ensure_output_parent(path)?;
+    let mut child = Command::new(dot_command)
+        .arg(format!("-T{graphviz_format}"))
+        .arg("-o")
+        .arg(path)
+        .stdin(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|err| {
+            if err.kind() == io::ErrorKind::NotFound {
+                Box::new(CliError::CommandUnavailable {
+                    command: dot_command.to_string(),
+                    hint: "install Graphviz to use --output-format svg or --output-format png, or use --output-format dot instead".to_string(),
+                }) as Box<dyn Error>
+            } else {
+                Box::new(err) as Box<dyn Error>
+            }
+        })?;
+
+    {
+        let stdin = child.stdin.as_mut().expect("dot stdin should be piped");
+        stdin.write_all(dot.as_bytes())?;
+    }
+
+    let output = child.wait_with_output()?;
+    if !output.status.success() {
+        return Err(Box::new(CliError::CommandFailed {
+            command: format!("{dot_command} -T{graphviz_format}"),
+            status: output.status.code(),
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        }));
+    }
+
+    Ok(())
+}
+
+fn append_lattice_cluster(
+    dot: &mut String,
+    prefix: &str,
+    lane_label: &str,
+    input: &str,
+    lattice: &Lattice,
+    best_arcs: &BTreeSet<ArcKey>,
+    best_nodes: &BTreeSet<usize>,
+) {
+    dot.push_str(&format!("  subgraph cluster_{prefix} {{\n"));
+    dot.push_str("    style=\"rounded\";\n");
+    dot.push_str("    color=\"#ced4da\";\n");
+    dot.push_str("    label=\"");
+    dot.push_str(&format!("{lane_label}\\ninput={}", dot_escape(input)));
+    dot.push_str("\";\n");
+    for node in 0..lattice.node_count() {
+        let label = if node == lattice.start() {
+            "BOS".to_string()
+        } else if node == lattice.end() {
+            "EOS".to_string()
+        } else {
+            node.to_string()
+        };
+        let shape = if node == lattice.end() {
+            "doublecircle"
+        } else {
+            "circle"
+        };
+        let color = if best_nodes.contains(&node) {
+            ROMAJI_DOT_BEST_PATH_COLOR
+        } else {
+            ROMAJI_DOT_DEFAULT_NODE_COLOR
+        };
+        let penwidth = if best_nodes.contains(&node) {
+            "2.4"
+        } else {
+            "1.2"
+        };
+        dot.push_str(&format!(
+            "    {prefix}_{node} [label=\"{}\", shape={shape}, color=\"{color}\", penwidth={penwidth}];\n",
+            dot_escape(&label)
+        ));
+    }
+    for arc in lattice.arcs() {
+        let key = arc_key(arc.src, arc.dst, arc.symbol);
+        let is_best = best_arcs.contains(&key);
+        let color = if is_best {
+            ROMAJI_DOT_BEST_PATH_COLOR
+        } else {
+            ROMAJI_DOT_MUTED_EDGE_COLOR
+        };
+        let penwidth = if is_best { "3.0" } else { "1.1" };
+        dot.push_str(&format!(
+            "    {prefix}_{} -> {prefix}_{} [label=\"{}\", color=\"{color}\", fontcolor=\"{color}\", penwidth={penwidth}];\n",
+            arc.src,
+            arc.dst,
+            dot_escape(&symbol_to_string(arc.symbol))
+        ));
+    }
+    dot.push_str("  }\n");
+}
+
+type ArcKey = (usize, usize, Symbol);
+
+fn arc_key(src: usize, dst: usize, symbol: Symbol) -> ArcKey {
+    (src, dst, symbol)
+}
+
+fn best_arc_keys(lattice: &Lattice, symbols: &[Symbol]) -> BTreeSet<ArcKey> {
+    let mut path = Vec::new();
+    if find_arc_path(lattice, lattice.start(), symbols, 0, &mut path) {
+        path.into_iter().collect()
+    } else {
+        BTreeSet::new()
+    }
+}
+
+fn find_arc_path(
+    lattice: &Lattice,
+    node: usize,
+    symbols: &[Symbol],
+    symbol_idx: usize,
+    path: &mut Vec<ArcKey>,
+) -> bool {
+    if symbol_idx == symbols.len() {
+        return node == lattice.end();
+    }
+
+    for arc in lattice.outgoing_arcs(node) {
+        if arc.symbol != symbols[symbol_idx] {
+            continue;
+        }
+        path.push(arc_key(arc.src, arc.dst, arc.symbol));
+        if find_arc_path(lattice, arc.dst, symbols, symbol_idx + 1, path) {
+            return true;
+        }
+        path.pop();
+    }
+    false
+}
+
+fn best_nodes(best_arcs: &BTreeSet<ArcKey>) -> BTreeSet<usize> {
+    let mut nodes = BTreeSet::new();
+    for &(src, dst, _) in best_arcs {
+        nodes.insert(src);
+        nodes.insert(dst);
+    }
+    nodes
+}
+
+fn symbol_to_string(symbol: Symbol) -> String {
+    char::from_u32(symbol)
+        .unwrap_or(char::REPLACEMENT_CHARACTER)
+        .to_string()
+}
+
+fn dot_escape(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for ch in value.chars() {
+        match ch {
+            '"' => escaped.push_str("\\\""),
+            '\\' => escaped.push_str("\\\\"),
+            '\n' => escaped.push_str("\\n"),
+            '\r' => {}
+            _ => escaped.push(ch),
+        }
+    }
+    escaped
+}
+
 pub(crate) fn format_reading_segments(segments: &[moine_ja::DictionaryReadingSegment]) -> String {
     segments
         .iter()
@@ -632,4 +927,15 @@ pub(crate) enum PinyinQueryExpansion {
         path_count: usize,
         stats: PinyinReadingStats,
     },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct RomajiLatticeData {
+    pub(crate) left_input: String,
+    pub(crate) right_input: String,
+    pub(crate) left_lattice: Lattice,
+    pub(crate) right_lattice: Lattice,
+    pub(crate) distance: usize,
+    pub(crate) trace: Option<DistanceTrace>,
+    pub(crate) trace_error: Option<String>,
 }

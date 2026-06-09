@@ -56,6 +56,8 @@ pub(crate) struct CompareOptions {
     pub(crate) artifact_payload: Option<String>,
     pub(crate) artifact_metadata: Option<String>,
     pub(crate) payload_format: ArtifactPayloadFormat,
+    pub(crate) romaji_lattice: Option<String>,
+    pub(crate) output_format: RomajiLatticeOutputFormat,
     pub(crate) index_options: UnidicIndexOptions,
     pub(crate) dictionary_options: DictionaryReadingOptions,
     pub(crate) dictionary_option_overrides: DictionaryReadingOptionOverrides,
@@ -221,6 +223,31 @@ pub(crate) enum ArtifactPayloadFormat {
     Yaml,
     Binary,
     Indexed,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum RomajiLatticeOutputFormat {
+    Dot,
+    Svg,
+    Png,
+}
+
+impl RomajiLatticeOutputFormat {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Dot => "dot",
+            Self::Svg => "svg",
+            Self::Png => "png",
+        }
+    }
+
+    pub(crate) fn graphviz_format(self) -> Option<&'static str> {
+        match self {
+            Self::Dot => None,
+            Self::Svg => Some("svg"),
+            Self::Png => Some("png"),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -823,6 +850,10 @@ struct CompareArgs {
     artifact_metadata: Option<String>,
     #[arg(long = "payload-format", value_parser = parse_artifact_payload_format_clap, value_name = "yaml|binary|indexed", default_value = "yaml")]
     payload_format: ArtifactPayloadFormat,
+    #[arg(long = "romaji-lattice", value_name = "PATH")]
+    romaji_lattice: Option<String>,
+    #[arg(long = "output-format", value_parser = parse_romaji_lattice_output_format_clap, value_name = "dot|svg|png", default_value = "svg")]
+    output_format: RomajiLatticeOutputFormat,
     #[command(flatten)]
     index: UnidicIndexArgs,
     #[command(flatten)]
@@ -839,6 +870,8 @@ impl CompareArgs {
             artifact_payload: self.artifact_payload,
             artifact_metadata: self.artifact_metadata,
             payload_format: self.payload_format,
+            romaji_lattice: self.romaji_lattice,
+            output_format: self.output_format,
             index_options: self.index.into_options(),
             dictionary_options: self.reading.into_options(),
             dictionary_option_overrides: self.reading.into_overrides(),
@@ -1488,6 +1521,21 @@ pub(crate) fn parse_artifact_payload_format(
     }
 }
 
+pub(crate) fn parse_romaji_lattice_output_format(
+    value: &str,
+) -> Result<RomajiLatticeOutputFormat, CliError> {
+    match value {
+        "dot" => Ok(RomajiLatticeOutputFormat::Dot),
+        "svg" => Ok(RomajiLatticeOutputFormat::Svg),
+        "png" => Ok(RomajiLatticeOutputFormat::Png),
+        _ => Err(CliError::InvalidArgumentValue {
+            name: "--output-format",
+            value: value.to_string(),
+            expected: "dot, svg, or png",
+        }),
+    }
+}
+
 pub(crate) fn parse_zh_artifact_payload_format(
     value: &str,
 ) -> Result<ArtifactPayloadFormat, CliError> {
@@ -1621,6 +1669,12 @@ fn parse_artifact_payload_format_clap(value: &str) -> Result<ArtifactPayloadForm
     parse_artifact_payload_format(value).map_err(|err| err.to_string())
 }
 
+fn parse_romaji_lattice_output_format_clap(
+    value: &str,
+) -> Result<RomajiLatticeOutputFormat, String> {
+    parse_romaji_lattice_output_format(value).map_err(|err| err.to_string())
+}
+
 fn parse_zh_artifact_payload_format_clap(value: &str) -> Result<ArtifactPayloadFormat, String> {
     parse_zh_artifact_payload_format(value).map_err(|err| err.to_string())
 }
@@ -1641,6 +1695,10 @@ pub(crate) enum CliError {
         command: String,
         status: Option<i32>,
         stderr: String,
+    },
+    CommandUnavailable {
+        command: String,
+        hint: String,
     },
     ArtifactVerificationFailed(String),
 }
@@ -1665,6 +1723,12 @@ impl fmt::Display for CliError {
                 f,
                 "command {command:?} failed with status {status:?}: {stderr}"
             ),
+            Self::CommandUnavailable { command, hint } => {
+                write!(
+                    f,
+                    "required command {command:?} was not found in PATH; {hint}"
+                )
+            }
             Self::ArtifactVerificationFailed(message) => {
                 write!(f, "artifact verification failed: {message}")
             }
