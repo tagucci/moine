@@ -36,7 +36,7 @@ ARTIFACT_SPECS: dict[Language, ArtifactSpec] = {
         artifact_name="moine-unidic-cwj-202512",
         archive_name="moine-unidic-cwj-202512.tar.gz",
         archive_url=(
-            f"{_RELEASE_BASE_URL}/unidic-cwj-202512-v0.1.0/moine-unidic-cwj-202512.tar.gz"
+            f"{_RELEASE_BASE_URL}/unidic-cwj-202512-v0.1.1/moine-unidic-cwj-202512.tar.gz"
         ),
         checksum_url=None,
     ),
@@ -46,7 +46,7 @@ ARTIFACT_SPECS: dict[Language, ArtifactSpec] = {
         artifact_name="moine-cedict-20260520",
         archive_name="moine-cedict-20260520.tar.gz",
         archive_url=(
-            f"{_RELEASE_BASE_URL}/moine-cedict-20260520-v0.1.0/moine-cedict-20260520.tar.gz"
+            f"{_RELEASE_BASE_URL}/moine-cedict-20260520-v0.1.1/moine-cedict-20260520.tar.gz"
         ),
         checksum_url=None,
     ),

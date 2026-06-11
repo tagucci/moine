@@ -2,6 +2,11 @@
 
 Initial public release of the `moine` UniDic-CWJ reading-index artifact.
 
+This release is retained as a compatibility artifact for older package builds.
+Current downloader defaults use
+`unidic-cwj-202512-v0.1.1`, which rebuilds the same artifact with the `pron`
+reading field and indexed payload.
+
 This release includes both gzip and zstd archive assets for the same binary
 payload. The zstd asset supports the Vibrato-style prebuilt artifact path while
 the gzip asset remains the default downloader target.

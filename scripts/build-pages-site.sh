@@ -64,12 +64,12 @@ install_demo_dictionary() {
 install_demo_dictionary \
   "ja" \
   "moine-unidic-cwj-202512" \
-  "unidic-cwj-202512-v0.1.0" \
+  "unidic-cwj-202512-v0.1.1" \
   "moine-unidic-cwj-202512.readings.moineidx"
 install_demo_dictionary \
   "zh" \
   "moine-cedict-20260520" \
-  "moine-cedict-20260520-v0.1.0" \
+  "moine-cedict-20260520-v0.1.1" \
   "moine-cedict-20260520.readings.moineidx"
 
 cat <<EOF

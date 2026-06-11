@@ -85,6 +85,21 @@ fn parses_download_options() {
 }
 
 #[test]
+fn default_download_specs_point_to_current_artifact_releases() {
+    let ja = download_spec_for_language(ArtifactLanguage::Japanese);
+    let zh = download_spec_for_language(ArtifactLanguage::Chinese);
+
+    assert_eq!(ja.artifact_name, "moine-unidic-cwj-202512");
+    assert!(ja
+        .archive_url
+        .contains("unidic-cwj-202512-v0.1.1/moine-unidic-cwj-202512.tar.gz"));
+    assert_eq!(zh.artifact_name, "moine-cedict-20260520");
+    assert!(zh
+        .archive_url
+        .contains("moine-cedict-20260520-v0.1.1/moine-cedict-20260520.tar.gz"));
+}
+
+#[test]
 fn parses_cache_lookup_options() {
     let list = CacheCliOptions::parse(vec![
         "--cache-dir".to_string(),

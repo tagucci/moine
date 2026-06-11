@@ -32,7 +32,7 @@ const DOWNLOAD_ARTIFACT_SPECS: &[DownloadArtifactSpec] = &[
         archive_name: "moine-unidic-cwj-202512.tar.gz",
         archive_url: concat!(
             "https://github.com/tagucci/moine/releases/download/",
-            "unidic-cwj-202512-v0.1.0/moine-unidic-cwj-202512.tar.gz"
+            "unidic-cwj-202512-v0.1.1/moine-unidic-cwj-202512.tar.gz"
         ),
         checksum_url: None,
     },
@@ -42,7 +42,7 @@ const DOWNLOAD_ARTIFACT_SPECS: &[DownloadArtifactSpec] = &[
         archive_name: "moine-cedict-20260520.tar.gz",
         archive_url: concat!(
             "https://github.com/tagucci/moine/releases/download/",
-            "moine-cedict-20260520-v0.1.0/moine-cedict-20260520.tar.gz"
+            "moine-cedict-20260520-v0.1.1/moine-cedict-20260520.tar.gz"
         ),
         checksum_url: None,
     },
