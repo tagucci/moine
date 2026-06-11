@@ -105,10 +105,10 @@ crates.io packages, and before pushing the package `vX.Y.Z` tag, create the
 GitHub Releases referenced by the baked-in download specs and upload assets with
 these exact names:
 
-- `unidic-cwj-202512-v0.1.0/moine-unidic-cwj-202512.tar.gz`
-- `unidic-cwj-202512-v0.1.0/moine-unidic-cwj-202512.tar.zst`
-- `moine-cedict-20260520-v0.1.0/moine-cedict-20260520.tar.gz`
-- `moine-cedict-20260520-v0.1.0/moine-cedict-20260520.tar.zst`
+- `unidic-cwj-202512-v0.1.1/moine-unidic-cwj-202512.tar.gz`
+- `unidic-cwj-202512-v0.1.1/moine-unidic-cwj-202512.tar.zst`
+- `moine-cedict-20260520-v0.1.1/moine-cedict-20260520.tar.gz`
+- `moine-cedict-20260520-v0.1.1/moine-cedict-20260520.tar.zst`
 
 The release workflow checks these assets before publishing the Python
 distribution on tag pushes. Keep the workflow asset list, Rust downloader specs,

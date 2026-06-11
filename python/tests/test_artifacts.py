@@ -4,7 +4,7 @@ from pathlib import Path
 
 import moine
 import pytest
-from moine._artifacts import _extract_archive, cli_main
+from moine._artifacts import ARTIFACT_SPECS, _extract_archive, cli_main
 
 
 def push_len_prefixed(data, tag, value):
@@ -133,3 +133,14 @@ def test_extract_archive_rejects_links(tmp_path):
 
     with pytest.raises(RuntimeError, match="unsupported archive entry type"):
         _extract_archive(archive, tmp_path / "extract")
+
+
+def test_default_artifact_specs_point_to_current_releases():
+    assert (
+        ARTIFACT_SPECS["ja"].archive_url == "https://github.com/tagucci/moine/releases/download/"
+        "unidic-cwj-202512-v0.1.1/moine-unidic-cwj-202512.tar.gz"
+    )
+    assert (
+        ARTIFACT_SPECS["zh"].archive_url == "https://github.com/tagucci/moine/releases/download/"
+        "moine-cedict-20260520-v0.1.1/moine-cedict-20260520.tar.gz"
+    )

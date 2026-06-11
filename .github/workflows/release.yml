@@ -81,10 +81,10 @@ jobs:
               | grep -Fx "$asset"
           }
 
-          check_asset "unidic-cwj-202512-v0.1.0" "moine-unidic-cwj-202512.tar.gz"
-          check_asset "unidic-cwj-202512-v0.1.0" "moine-unidic-cwj-202512.tar.zst"
-          check_asset "moine-cedict-20260520-v0.1.0" "moine-cedict-20260520.tar.gz"
-          check_asset "moine-cedict-20260520-v0.1.0" "moine-cedict-20260520.tar.zst"
+          check_asset "unidic-cwj-202512-v0.1.1" "moine-unidic-cwj-202512.tar.gz"
+          check_asset "unidic-cwj-202512-v0.1.1" "moine-unidic-cwj-202512.tar.zst"
+          check_asset "moine-cedict-20260520-v0.1.1" "moine-cedict-20260520.tar.gz"
+          check_asset "moine-cedict-20260520-v0.1.1" "moine-cedict-20260520.tar.zst"
 
   build-sdist:
     name: Build Python sdist

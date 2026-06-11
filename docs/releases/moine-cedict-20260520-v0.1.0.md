@@ -2,6 +2,9 @@
 
 Planned first public release of the `moine` CC-CEDICT no-tone pinyin artifact.
 
+This release is retained as a compatibility artifact for older package builds.
+Current downloader defaults use `moine-cedict-20260520-v0.1.1`.
+
 Assets:
 
 - `moine-cedict-20260520.tar.gz`

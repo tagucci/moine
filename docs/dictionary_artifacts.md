@@ -459,14 +459,16 @@ the metadata license references under a root directory named after
   optional extras may depend on separate data wheels or downloader helpers
 
 Dictionary tags use an artifact-specific form such as
-`unidic-cwj-202512-v0.1.0`. That keeps generated dictionary releases separate
-from `moine` library tags.
+`unidic-cwj-202512-v0.1.1`. That keeps generated dictionary releases separate
+from `moine` library tags. Older artifact tags may remain published as
+compatibility anchors for previously released packages, but new downloader
+defaults should point at the current documented artifact tags.
 
 Users should download, extract, and pass the artifact explicitly:
 
 ```bash
 mkdir -p dist/downloads
-gh release download unidic-cwj-202512-v0.1.0 \
+gh release download unidic-cwj-202512-v0.1.1 \
   --repo tagucci/moine \
   --pattern moine-unidic-cwj-202512.tar.gz \
   --dir dist/downloads
