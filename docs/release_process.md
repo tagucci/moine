@@ -31,11 +31,19 @@ RUSTDOCFLAGS='-D warnings' cargo doc --workspace --no-deps
 cargo rustdoc -p moine --lib -- -W missing_docs
 cargo rustdoc -p moine-core --lib -- -W missing_docs
 
-uv run --with '.[test]' python -m pytest python/tests
-uv run --with '.[dev]' ruff check python
-uv run --with '.[dev]' ruff format --check python
-uv run --with '.[dev]' ty check
+WHEEL_DIR=$(mktemp -d)
+uv run --no-project --with 'maturin>=1.9,<2' maturin build --out "$WHEEL_DIR"
+WHEEL=$(ls "$WHEEL_DIR"/moine-*.whl)
+uv run --no-project --with 'pytest>=8,<9' --with "$WHEEL" python -m pytest python/tests
+uv run --no-project --with 'ruff>=0.14,<0.15' ruff check python
+uv run --no-project --with 'ruff>=0.14,<0.15' ruff format --check python
+uv run --no-project --with 'ty>=0.0.38,<0.1' ty check
 ```
+
+The Python checks intentionally use `--no-project`. That keeps `uv` from
+installing `moine` itself into the temporary tool environment. The pytest step
+first builds a fresh local wheel and installs that wheel explicitly so cached
+`moine` wheels with the same version cannot shadow the checkout.
 
 Run the local artifact smoke script:
 

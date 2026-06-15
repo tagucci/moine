@@ -9,8 +9,8 @@ dictionary artifact downloads, and conservative Rust/Python APIs.
 Before opening a pull request:
 
 - Run `cargo fmt --check` and `cargo test` for Rust changes.
-- Run `uv run --with '.[test]' python -m pytest python/tests` for Python
-  changes.
+- Build a local wheel and run pytest against that wheel for Python changes;
+  see `docs/development.md` for the exact commands.
 - Update README, `website/`, or `docs/` when public behavior changes.
 - Do not commit local dictionary packages, generated release artifacts, or
   local scratch workspaces.

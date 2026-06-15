@@ -27,11 +27,19 @@ cargo test
 Run Python tests and package checks:
 
 ```bash
-uv run --with '.[test]' python -m pytest python/tests
-uv run --with '.[dev]' ruff check python
-uv run --with '.[dev]' ruff format --check python
-uv run --with '.[dev]' ty check
+WHEEL_DIR=$(mktemp -d)
+uv run --no-project --with 'maturin>=1.9,<2' maturin build --out "$WHEEL_DIR"
+WHEEL=$(ls "$WHEEL_DIR"/moine-*.whl)
+uv run --no-project --with 'pytest>=8,<9' --with "$WHEEL" python -m pytest python/tests
+uv run --no-project --with 'ruff>=0.14,<0.15' ruff check python
+uv run --no-project --with 'ruff>=0.14,<0.15' ruff format --check python
+uv run --no-project --with 'ty>=0.0.38,<0.1' ty check
 ```
+
+Use the `--no-project` form for local checks so `uv` installs only the tool
+being run. For pytest, build a fresh local wheel first and install that wheel
+into the temporary pytest environment so cached `moine` wheels with the same
+version cannot shadow the checkout.
 
 Build the GitHub Pages documentation site and browser demo:
 
