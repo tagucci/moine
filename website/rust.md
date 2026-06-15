@@ -63,6 +63,6 @@ Detailed Rust API documentation belongs on docs.rs:
 
 - [`moine`](https://docs.rs/moine): umbrella API and verified bundle loaders
 - [`moine-core`](https://docs.rs/moine-core): language-independent lattice edit distance
-- [`moine-ja`](https://docs.rs/moine-ja): Japanese kana, romaji, and UniDic adapter
+- [`moine-ja`](https://docs.rs/moine-ja): Japanese kana, romaji, UniDic, and Sudachi adapters
 - [`moine-zh`](https://docs.rs/moine-zh): Chinese pinyin and CC-CEDICT adapter
 - [`moine-cli`](https://docs.rs/moine-cli): CLI implementation crate

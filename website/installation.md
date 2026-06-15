@@ -16,12 +16,25 @@ The packages do not bundle dictionary data. Download the language artifacts you
 need explicitly:
 
 ```bash
+# Default Japanese artifact: UniDic-CWJ
 uv run python -m moine download ja
+
+# Explicit Japanese sources
+uv run python -m moine download ja-unidic
+uv run python -m moine download ja-sudachi
+
+# Chinese artifact: CC-CEDICT
 uv run python -m moine download zh
 
+# Same selectors are available from the Rust CLI.
 moine download ja
+moine download ja-unidic
+moine download ja-sudachi
 moine download zh
 ```
+
+`ja` installs the default Japanese artifact, currently UniDic-CWJ. Use
+`ja-unidic` or `ja-sudachi` when you want the dictionary source to be explicit.
 
 Installed artifacts are stored in the local mòine cache:
 

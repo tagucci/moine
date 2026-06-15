@@ -22,7 +22,7 @@ than only through visible surface characters.
 mòine is useful for matching noisy Japanese or Chinese search/input strings,
 especially when surface forms differ but reading paths stay close.
 
-- Japanese comparison uses [UniDic-CWJ](https://clrd.ninjal.ac.jp/unidic/download.html)-derived reading artifacts.
+- Japanese comparison uses [UniDic-CWJ](https://clrd.ninjal.ac.jp/unidic/download.html)-derived reading artifacts by default, with separate SudachiDict-derived artifacts when users choose the `ja-sudachi` selector.
 - Chinese comparison uses [CC-CEDICT](https://cc-cedict.org/wiki/)-derived no-tone pinyin artifacts.
 - Python APIs include `distance`, `damerau_distance`, `ratio`, `partial_ratio`, and `cdist`.
 - Rust users can use the published crate and detailed API documentation on docs.rs.

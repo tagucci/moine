@@ -8,7 +8,7 @@ details out of the public-facing README and Website.
 ```text
 crates/moine         public Rust umbrella crate and cargo-installable binary
 crates/moine-core    language-independent lattice and edit-distance core
-crates/moine-ja      Japanese kana, romaji, override, and UniDic adapters
+crates/moine-ja      Japanese kana, romaji, override, UniDic, and Sudachi adapters
 crates/moine-zh      Chinese pinyin and CC-CEDICT adapters
 crates/moine-cli     CLI implementation, diagnostics, downloads, and artifacts
 crates/moine-python  PyO3 extension module backing the Python package
@@ -97,6 +97,55 @@ a local Graphviz installation.
 The UniDic commands require a local full UniDic package containing `lex.csv`.
 Dictionary packages are not committed to this repository.
 
+## Sudachi Diagnostics
+
+SudachiDict raw CSV files are published separately from the GitHub release
+dictionary zips. The upstream
+[SudachiDict build-from-sources notes](https://github.com/WorksApplications/SudachiDict#build-from-sources)
+state: "Core dictionary requires small and core files, Full requires all three
+files." Download the three raw lexicon files from the same release and
+concatenate them to build a full-equivalent CSV:
+
+```bash
+mkdir -p /tmp/sudachi-raw-20260428
+
+curl -L -o /tmp/sudachi-raw-20260428/small_lex.zip \
+  http://sudachi.s3-website-ap-northeast-1.amazonaws.com/sudachidict-raw/20260428/small_lex.zip
+curl -L -o /tmp/sudachi-raw-20260428/core_lex.zip \
+  http://sudachi.s3-website-ap-northeast-1.amazonaws.com/sudachidict-raw/20260428/core_lex.zip
+curl -L -o /tmp/sudachi-raw-20260428/notcore_lex.zip \
+  http://sudachi.s3-website-ap-northeast-1.amazonaws.com/sudachidict-raw/20260428/notcore_lex.zip
+
+unzip -p /tmp/sudachi-raw-20260428/small_lex.zip small_lex.csv \
+  > /tmp/sudachi-raw-20260428/full_lex.csv
+unzip -p /tmp/sudachi-raw-20260428/core_lex.zip core_lex.csv \
+  >> /tmp/sudachi-raw-20260428/full_lex.csv
+unzip -p /tmp/sudachi-raw-20260428/notcore_lex.zip notcore_lex.csv \
+  >> /tmp/sudachi-raw-20260428/full_lex.csv
+```
+
+Inspect Sudachi readings for a surface form:
+
+```bash
+cargo run -q -p moine-cli -- sudachi-csv-readings \
+  --surface "鬼滅の刃" \
+  --lex-csv /tmp/sudachi-raw-20260428/full_lex.csv \
+  --max-readings-per-surface 16
+```
+
+Compare with Sudachi raw CSV directly:
+
+```bash
+cargo run -q -p moine-cli -- compare \
+  --left "きめつのやいば" \
+  --right "鬼滅の刃" \
+  --sudachi-lex-csv /tmp/sudachi-raw-20260428/full_lex.csv \
+  --max-readings-per-surface 16 \
+  --max-readings-per-segment 16 \
+  --max-paths 128 \
+  --longest-only
+```
+
 ## UniDic Artifact Recipes
 
 Create a release-style indexed bundle:
@@ -125,6 +174,16 @@ scripts/release-unidic-cwj.sh \
   --payload-format indexed
 ```
 
+Use `--compression zstd` when preparing the `.tar.zst` release asset directly
+from the raw UniDic CSV:
+
+```bash
+scripts/release-unidic-cwj.sh \
+  --lex-csv unidic-cwj-202512_full/lex.csv \
+  --source-version 2025.12 \
+  --compression zstd
+```
+
 Verify a bundle:
 
 ```bash
@@ -150,6 +209,65 @@ cargo run -q -p moine-cli --release -- unidic-artifact-runtime-measure \
   --pair "とうきょうと" "東京都" \
   --warmups 10 \
   --iterations 100
+```
+
+## Sudachi Artifact Recipes
+
+Create a release-style indexed bundle from the concatenated full CSV. This
+follows the upstream
+[SudachiDict source-build requirement](https://github.com/WorksApplications/SudachiDict#build-from-sources)
+for Full dictionaries, which requires all three raw source files:
+
+```bash
+cargo run -q -p moine-cli -- sudachi-artifact-bundle \
+  --lex-csv /tmp/sudachi-raw-20260428/full_lex.csv \
+  --source-version 20260428 \
+  --artifact-name moine-sudachi-full-20260428 \
+  --payload-format indexed \
+  --max-readings-per-surface 16 \
+  --exclude-unsupported-readings \
+  --max-readings-per-segment 16 \
+  --max-span-chars 24 \
+  --max-paths 128 \
+  --longest-only \
+  --license-file /path/to/SudachiDict/LICENSE-2.0.txt \
+  --legal-file /path/to/SudachiDict/LEGAL \
+  --output-dir dist/moine-sudachi-full-20260428
+```
+
+`--license-file` and `--legal-file` are required so the generated bundle
+metadata always references both the SudachiDict Apache-2.0 license text and the
+upstream legal notice. The release default `--max-span-chars 24` covers nearly
+all release-shaped Sudachi lookup keys while keeping segmentation bounded; exact
+keys longer than 24 characters require a caller override such as
+`max_span_chars=32` or higher. The existing artifact verification and archive
+commands operate on the generated metadata:
+
+```bash
+cargo run -q -p moine-cli -- unidic-artifact-verify \
+  --metadata dist/moine-sudachi-full-20260428/metadata.yaml
+```
+
+For release assets, prefer the checked wrapper:
+
+```bash
+scripts/release-sudachi-full.sh \
+  --lex-csv /tmp/sudachi-raw-20260428/full_lex.csv \
+  --source-version 20260428 \
+  --license-file /path/to/SudachiDict/LICENSE-2.0.txt \
+  --legal-file /path/to/SudachiDict/LEGAL
+```
+
+Use `--compression zstd` when preparing the `.tar.zst` release asset directly
+from the raw Sudachi CSV:
+
+```bash
+scripts/release-sudachi-full.sh \
+  --lex-csv /tmp/sudachi-raw-20260428/full_lex.csv \
+  --source-version 20260428 \
+  --license-file /path/to/SudachiDict/LICENSE-2.0.txt \
+  --legal-file /path/to/SudachiDict/LEGAL \
+  --compression zstd
 ```
 
 ## Chinese Diagnostics
@@ -205,6 +323,16 @@ scripts/release-cedict.sh \
   --source-version 2026-05-20 \
   --artifact-name moine-cedict-20260520 \
   --payload-format indexed
+```
+
+Use `--compression zstd` when preparing the `.tar.zst` release asset directly
+from the raw CC-CEDICT dump:
+
+```bash
+scripts/release-cedict.sh \
+  --cedict cedict_1_0_ts_utf-8_mdbg.txt \
+  --source-version 2026-05-20 \
+  --compression zstd
 ```
 
 Verify and use the generated bundle without reading raw CC-CEDICT:
@@ -284,6 +412,10 @@ moine --help
 moine download ja
 moine download zh
 ```
+
+`ja` installs the default Japanese artifact, currently UniDic-CWJ. Use
+`ja-unidic` for an explicit UniDic-CWJ selector and `ja-sudachi` for
+SudachiDict-full.
 
 The `moine` package also exposes the Rust library surface. `moine-cli` remains
 an implementation/support package so `cargo install moine` can install the

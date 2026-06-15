@@ -82,6 +82,7 @@ Use the language-specific release scripts for dictionary bundles:
 
 ```bash
 scripts/release-unidic-cwj.sh --help
+scripts/release-sudachi-full.sh --help
 scripts/release-cedict.sh --help
 ```
 
@@ -93,9 +94,10 @@ Each artifact release should include:
   or attribution files
 - a short release note under `docs/releases/`
 
-The first public UniDic-CWJ and CC-CEDICT artifact releases include both
-`*.tar.gz` and `*.tar.zst` archives. Downloaders use the gzip assets by default;
-the zstd assets are provided for users who prefer faster local extraction.
+The public UniDic-CWJ, SudachiDict-full, and CC-CEDICT artifact releases include
+both `*.tar.gz` and `*.tar.zst` archives. Downloaders use the gzip assets by
+default; the zstd assets are provided for users who prefer faster local
+extraction.
 
 `SHA256SUMS` is optional. Generate it only for releases that need an external
 checksum manifest in addition to the bundle metadata and payload digests.
@@ -105,10 +107,12 @@ crates.io packages, and before pushing the package `vX.Y.Z` tag, create the
 GitHub Releases referenced by the baked-in download specs and upload assets with
 these exact names:
 
-- `unidic-cwj-202512-v0.1.0/moine-unidic-cwj-202512.tar.gz`
-- `unidic-cwj-202512-v0.1.0/moine-unidic-cwj-202512.tar.zst`
-- `moine-cedict-20260520-v0.1.0/moine-cedict-20260520.tar.gz`
-- `moine-cedict-20260520-v0.1.0/moine-cedict-20260520.tar.zst`
+- `unidic-cwj-202512-v0.1.1/moine-unidic-cwj-202512.tar.gz`
+- `unidic-cwj-202512-v0.1.1/moine-unidic-cwj-202512.tar.zst`
+- `moine-sudachi-full-20260428-v0.2.0/moine-sudachi-full-20260428.tar.gz`
+- `moine-sudachi-full-20260428-v0.2.0/moine-sudachi-full-20260428.tar.zst`
+- `moine-cedict-20260520-v0.1.1/moine-cedict-20260520.tar.gz`
+- `moine-cedict-20260520-v0.1.1/moine-cedict-20260520.tar.zst`
 
 The release workflow checks these assets before publishing the Python
 distribution on tag pushes. Keep the workflow asset list, Rust downloader specs,
@@ -120,7 +124,11 @@ Then smoke-test both downloaders from an empty cache:
 ```bash
 tmp="$(mktemp -d)"
 MOINE_CACHE_DIR="$tmp/python-cache" uv run python -m moine download ja
+MOINE_CACHE_DIR="$tmp/python-cache" uv run python -m moine download ja-unidic
+MOINE_CACHE_DIR="$tmp/python-cache" uv run python -m moine download ja-sudachi
 MOINE_CACHE_DIR="$tmp/python-cache" uv run python -m moine download zh
 MOINE_CACHE_DIR="$tmp/rust-cache" moine download ja
+MOINE_CACHE_DIR="$tmp/rust-cache" moine download ja-unidic
+MOINE_CACHE_DIR="$tmp/rust-cache" moine download ja-sudachi
 MOINE_CACHE_DIR="$tmp/rust-cache" moine download zh
 ```

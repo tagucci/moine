@@ -9,16 +9,19 @@ emitted by the CLI.
 
 The initial OSS artifact set should stay intentionally small:
 
-- Japanese: one UniDic-CWJ-derived indexed artifact.
+- Japanese: one UniDic-CWJ-derived indexed artifact and one
+  SudachiDict-full-derived indexed artifact.
 - Chinese: one CC-CEDICT-derived no-tone pinyin artifact.
 
-Sudachi artifacts and additional evaluation-specific artifacts are deferred
-until after the first public release.
+Additional evaluation-specific artifacts are deferred until after the first
+public release.
 
 ## UniDic Metadata
 
-The current schema is `schema_version: 1` and describes a
-`moine.unidic.reading-index` artifact.
+The current Japanese schema is `schema_version: 1` and describes a
+`moine.unidic.reading-index` artifact. The type name is historical; Sudachi
+artifacts reuse the same Japanese `surface -> readings` payload boundary and
+record `source.name: SudachiDict` plus `build.reading_field: sudachi-reading`.
 
 It records:
 
@@ -92,6 +95,55 @@ license:
   - label: COPYING
     path: license/COPYING
 ```
+
+Sudachi full artifacts are built from the concatenated raw
+`small_lex.csv + core_lex.csv + notcore_lex.csv` source files for a single
+SudachiDict release. This mirrors the upstream
+[SudachiDict build-from-sources guidance](https://github.com/WorksApplications/SudachiDict#build-from-sources):
+"Core dictionary requires small and core files, Full requires all three files."
+
+```bash
+cargo run -q -p moine-cli -- sudachi-artifact-bundle \
+  --lex-csv /tmp/sudachi-raw-20260428/full_lex.csv \
+  --source-version 20260428 \
+  --artifact-name moine-sudachi-full-20260428 \
+  --payload-format indexed \
+  --max-readings-per-surface 16 \
+  --exclude-unsupported-readings \
+  --max-readings-per-segment 16 \
+  --max-span-chars 24 \
+  --max-paths 128 \
+  --longest-only \
+  --license-file /path/to/SudachiDict/LICENSE-2.0.txt \
+  --legal-file /path/to/SudachiDict/LEGAL \
+  --output-dir dist/moine-sudachi-full-20260428
+```
+
+For release assets, use the checked wrapper so bundle generation,
+verification, archive creation, and optional checksum-manifest output stay
+consistent with the UniDic and CC-CEDICT release paths:
+
+```bash
+scripts/release-sudachi-full.sh \
+  --lex-csv /tmp/sudachi-raw-20260428/full_lex.csv \
+  --source-version 20260428 \
+  --license-file /path/to/SudachiDict/LICENSE-2.0.txt \
+  --legal-file /path/to/SudachiDict/LEGAL
+```
+
+The Sudachi CSV builder reads `surface` column 0, `normalized_form` column 4,
+coarse POS column 5, and `reading_form` column 11. By default it excludes
+ASCII-only surfaces and symbol POS entries, adds normalized-form aliases, and
+keeps raw Sudachi readings. Compare-time lattice construction skips dictionary
+paths whose readings cannot be converted to romaji; release artifacts can also
+omit those readings up front with `--exclude-unsupported-readings`.
+
+Sudachi release metadata uses `max_span_chars: 24` as the default query window.
+With the 20260428 full artifact filters, this leaves a small tail of lookup
+keys longer than 24 characters outside the default expansion path. They include
+long legal names, long title/artist strings, and unusually long phrase-like
+entries. Users who need those exact entries can pass a larger `max_span_chars`
+value when comparing or loading through higher-level APIs.
 
 ## Payload
 
@@ -459,14 +511,14 @@ the metadata license references under a root directory named after
   optional extras may depend on separate data wheels or downloader helpers
 
 Dictionary tags use an artifact-specific form such as
-`unidic-cwj-202512-v0.1.0`. That keeps generated dictionary releases separate
+`unidic-cwj-202512-v0.1.1`. That keeps generated dictionary releases separate
 from `moine` library tags.
 
 Users should download, extract, and pass the artifact explicitly:
 
 ```bash
 mkdir -p dist/downloads
-gh release download unidic-cwj-202512-v0.1.0 \
+gh release download unidic-cwj-202512-v0.1.1 \
   --repo tagucci/moine \
   --pattern moine-unidic-cwj-202512.tar.gz \
   --dir dist/downloads
@@ -486,7 +538,14 @@ split as `fugashi[unidic-lite]` for small installable data and
 UniDic package. The first public downloader surface should stay small:
 
 ```bash
+# Default Japanese artifact: UniDic-CWJ
 uv run python -m moine download ja
+
+# Explicit Japanese sources
+uv run python -m moine download ja-unidic
+uv run python -m moine download ja-sudachi
+
+# Chinese artifact: CC-CEDICT
 uv run python -m moine download zh
 uv run python -m moine list
 uv run python -m moine where
@@ -513,8 +572,10 @@ moine[zh]
   -> may install a small CC-CEDICT-derived data wheel
 
 moine[ja]
-  -> installs helpers for Japanese artifacts; full UniDic download remains
-     explicit, for example through uv run python -m moine download ja
+  -> installs helpers for Japanese artifacts; full dictionary downloads remain
+     explicit, for example through uv run python -m moine download ja,
+     uv run python -m moine download ja-unidic, or uv run python -m moine
+     download ja-sudachi
 
 moine[ja-lite]
   -> possible only if a small Japanese artifact is compact enough for PyPI
@@ -554,6 +615,33 @@ dist/moine-unidic-cwj-202512/
 dist/moine-unidic-cwj-202512.tar.gz
 ```
 
+The checked SudachiDict-full recipe uses the same Japanese payload and archive
+boundary while preserving both required SudachiDict notice files. Its input CSV
+should be the all-three-file Full source build described by the upstream
+[SudachiDict build-from-sources notes](https://github.com/WorksApplications/SudachiDict#build-from-sources):
+
+```bash
+scripts/release-sudachi-full.sh \
+  --lex-csv /tmp/sudachi-raw-20260428/full_lex.csv \
+  --source-version 20260428 \
+  --license-file /path/to/SudachiDict/LICENSE-2.0.txt \
+  --legal-file /path/to/SudachiDict/LEGAL \
+  --compression gzip
+
+target/release/moine unidic-artifact-archive \
+  --metadata dist/moine-sudachi-full-20260428/metadata.yaml \
+  --output dist/moine-sudachi-full-20260428.tar.zst \
+  --compression zstd
+```
+
+Release outputs:
+
+```text
+dist/moine-sudachi-full-20260428/
+dist/moine-sudachi-full-20260428.tar.gz
+dist/moine-sudachi-full-20260428.tar.zst
+```
+
 The checked CC-CEDICT recipe mirrors the same archive boundary for the first
 Chinese no-tone artifact:
 
@@ -586,6 +674,13 @@ and `MOINE_BIN`. Use `--checksum-manifest` when a release should also emit
 `dist/SHA256SUMS`. The script intentionally does not create a GitHub Release or
 sign assets; publishing and key management are kept outside the local build
 recipe.
+
+The Sudachi script accepts `--artifact-name`, `--dist-dir`, `--license-file`,
+`--legal-file`, `--payload-format`, `--compression`, `--max-span-chars`,
+`--include-unsupported-readings`, and `--checksum-manifest`, plus matching
+limit and `MOINE_BIN` environment overrides. Its default payload format is
+indexed, its default `max_span_chars` is 24, and its default release build
+excludes readings unsupported by the current romaji converter.
 
 The CC-CEDICT script accepts `--artifact-name`, `--dist-dir`, `--license-file`,
 `--pinyin-view`, `--payload-format`, `--compression`, and

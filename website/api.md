@@ -19,7 +19,9 @@ to plain string edit distance.
 : The second string.
 
 `lang`
-: Optional language code. Use `"ja"` for Japanese or `"zh"` for Chinese.
+: Optional language code. Use `"ja"` for the default Japanese artifact,
+  `"ja-unidic"` for UniDic-CWJ, `"ja-sudachi"` for SudachiDict-full, or `"zh"`
+  for Chinese.
 
 `dictionary`
 : Optional loaded dictionary object. When omitted, mòine loads or reuses the
@@ -152,8 +154,9 @@ Returns a query-by-choice matrix of scores.
 : Iterable of candidate strings.
 
 `lang`
-: Optional language code. Use `"ja"` or `"zh"` for dictionary-backed scoring.
-  Omit it for plain string scoring.
+: Optional language code. Use `"ja"` for the default Japanese artifact,
+  `"ja-unidic"` for UniDic-CWJ, `"ja-sudachi"` for SudachiDict-full, or `"zh"`
+  for Chinese. Omit it for plain string scoring.
 
 `dictionary`
 : Optional loaded dictionary object. When supplied, `cdist` can run without
@@ -234,7 +237,7 @@ Returns the configured default dictionary for a language, or `None`.
 ## Language-Specific Modules
 
 `moine.ja`
-: Japanese helpers, the UniDic-backed `Dictionary` alias, and
+: Japanese helpers, the Japanese reading-artifact `Dictionary` alias, and
   `process.extract(...)` / `extract_one(...)` candidate scoring helpers.
 
 `moine.zh`
