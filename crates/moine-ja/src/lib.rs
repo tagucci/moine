@@ -1,9 +1,9 @@
-//! Japanese kana, romaji, override, and UniDic adapters for `moine`.
+//! Japanese kana, romaji, override, UniDic, and Sudachi adapters for `moine`.
 //!
 //! This crate converts Japanese surface text into romaji lattices through
-//! direct kana/ASCII handling, manual override dictionaries, or UniDic-derived
-//! reading artifacts. The language-independent edit-distance algorithms remain
-//! in `moine-core`.
+//! direct kana/ASCII handling, manual override dictionaries, UniDic-derived
+//! reading artifacts, or Sudachi-derived reading artifacts. The
+//! language-independent edit-distance algorithms remain in `moine-core`.
 //!
 //! Dictionary artifacts are external input. Prefer `try_*` lookup and expansion
 //! APIs at trust boundaries so indexed-payload decode errors are reported as
@@ -26,6 +26,7 @@ mod distance;
 mod kana;
 mod overrides;
 mod romaji;
+mod sudachi;
 mod unidic;
 
 pub use distance::{
@@ -35,6 +36,7 @@ pub use distance::{
 pub use kana::{is_kana, normalize_kana, normalize_kana_char};
 pub use overrides::{OverrideDictionary, OverrideLoadError};
 pub use romaji::{romaji_lattice, romaji_paths, JaLatticeError, RomajiVariantTable};
+pub use sudachi::SudachiIndexOptions;
 pub use unidic::{
     artifact_file_digest_path, artifact_file_digest_reader, romaji_lattice_from_reading_paths,
     romaji_paths_from_reading_paths, DictionaryReadingExpansion, DictionaryReadingOptions,

@@ -3,7 +3,9 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use clap::{ArgGroup, Args, Parser, Subcommand};
-use moine_ja::{DictionaryReadingOptions, UnidicIndexOptions, UnidicReadingField};
+use moine_ja::{
+    DictionaryReadingOptions, SudachiIndexOptions, UnidicIndexOptions, UnidicReadingField,
+};
 use moine_zh::{CedictIndexOptions, PinyinReadingOptions, PinyinView};
 
 pub(crate) const YAML_PAYLOAD_FORMAT: &str = "yaml.surface-readings.v1";
@@ -13,6 +15,7 @@ pub(crate) const INDEXED_PAYLOAD_FORMAT: &str = "indexed-fst.surface-readings.v1
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ArtifactLanguage {
     Japanese,
+    JapaneseSudachi,
     Chinese,
 }
 
@@ -37,6 +40,16 @@ const DOWNLOAD_ARTIFACT_SPECS: &[DownloadArtifactSpec] = &[
         checksum_url: None,
     },
     DownloadArtifactSpec {
+        language: ArtifactLanguage::JapaneseSudachi,
+        artifact_name: "moine-sudachi-full-20260428",
+        archive_name: "moine-sudachi-full-20260428.tar.gz",
+        archive_url: concat!(
+            "https://github.com/tagucci/moine/releases/download/",
+            "moine-sudachi-full-20260428-v0.2.0/moine-sudachi-full-20260428.tar.gz"
+        ),
+        checksum_url: None,
+    },
+    DownloadArtifactSpec {
         language: ArtifactLanguage::Chinese,
         artifact_name: "moine-cedict-20260520",
         archive_name: "moine-cedict-20260520.tar.gz",
@@ -48,17 +61,20 @@ const DOWNLOAD_ARTIFACT_SPECS: &[DownloadArtifactSpec] = &[
     },
 ];
 
+#[derive(Debug)]
 pub(crate) struct CompareOptions {
     pub(crate) left: String,
     pub(crate) right: String,
     pub(crate) overrides: Option<String>,
     pub(crate) lex_csv: Option<String>,
+    pub(crate) sudachi_lex_csv: Option<String>,
     pub(crate) artifact_payload: Option<String>,
     pub(crate) artifact_metadata: Option<String>,
     pub(crate) payload_format: ArtifactPayloadFormat,
     pub(crate) romaji_lattice: Option<String>,
     pub(crate) output_format: RomajiLatticeOutputFormat,
     pub(crate) index_options: UnidicIndexOptions,
+    pub(crate) sudachi_index_options: SudachiIndexOptions,
     pub(crate) dictionary_options: DictionaryReadingOptions,
     pub(crate) dictionary_option_overrides: DictionaryReadingOptionOverrides,
 }
@@ -206,6 +222,20 @@ pub(crate) struct UnidicArtifactBundleCliOptions {
     pub(crate) source_version: String,
     pub(crate) license_dir: Option<String>,
     pub(crate) index_options: UnidicIndexOptions,
+    pub(crate) dictionary_options: DictionaryReadingOptions,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SudachiArtifactBundleCliOptions {
+    pub(crate) lex_csv: String,
+    pub(crate) output_dir: String,
+    pub(crate) artifact_name: String,
+    pub(crate) payload_format: ArtifactPayloadFormat,
+    pub(crate) source_name: String,
+    pub(crate) source_version: String,
+    pub(crate) license_file: String,
+    pub(crate) legal_file: String,
+    pub(crate) index_options: SudachiIndexOptions,
     pub(crate) dictionary_options: DictionaryReadingOptions,
 }
 
@@ -376,6 +406,21 @@ pub(crate) struct UnidicCsvSequencesOptions {
     pub(crate) dictionary_options: DictionaryReadingOptions,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SudachiCsvReadingsOptions {
+    pub(crate) surface: String,
+    pub(crate) lex_csv: String,
+    pub(crate) index_options: SudachiIndexOptions,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SudachiCsvSequencesOptions {
+    pub(crate) text: String,
+    pub(crate) lex_csv: String,
+    pub(crate) index_options: SudachiIndexOptions,
+    pub(crate) dictionary_options: DictionaryReadingOptions,
+}
+
 #[derive(Debug, Parser)]
 #[command(
     name = "moine",
@@ -424,6 +469,12 @@ enum CliCommand {
     List(CacheArgs),
     /// Show the cache location or expected artifact path.
     Where(WhereArgs),
+    /// Build a Sudachi dictionary artifact bundle.
+    SudachiArtifactBundle(SudachiArtifactBundleArgs),
+    /// Show Sudachi CSV readings for a surface.
+    SudachiCsvReadings(SudachiCsvReadingsArgs),
+    /// Expand Japanese text into Sudachi reading paths.
+    SudachiCsvSequences(SudachiCsvSequencesArgs),
     /// Create a release archive for a Chinese dictionary artifact.
     ZhArtifactArchive(ZhArtifactArchiveArgs),
     /// Build a Chinese dictionary artifact bundle from CC-CEDICT.
@@ -438,25 +489,25 @@ enum CliCommand {
     ZhArtifactReleaseChecksums(ReleaseChecksumsArgs),
     /// Verify a Chinese dictionary artifact bundle.
     ZhArtifactVerify(ArtifactVerifyArgs),
-    /// Create a release archive for a UniDic dictionary artifact.
+    /// Create a release archive for a Japanese dictionary artifact.
     UnidicArtifactArchive(UnidicArtifactArchiveArgs),
-    /// Inspect a binary UniDic artifact payload.
+    /// Inspect a binary Japanese dictionary artifact payload.
     UnidicArtifactBinaryInspect(UnidicArtifactBinaryInspectArgs),
     /// Generate a binary UniDic artifact payload.
     UnidicArtifactBinaryPayload(UnidicArtifactBinaryPayloadArgs),
     /// Build a UniDic dictionary artifact bundle.
     UnidicArtifactBundle(UnidicArtifactBundleArgs),
-    /// Inspect a YAML UniDic artifact payload.
+    /// Inspect a YAML Japanese dictionary artifact payload.
     UnidicArtifactInspect(UnidicArtifactInspectArgs),
     /// Generate UniDic dictionary artifact metadata.
     UnidicArtifactMetadata(UnidicArtifactMetadataArgs),
     /// Generate a YAML UniDic artifact payload.
     UnidicArtifactPayload(UnidicArtifactPayloadArgs),
-    /// Generate SHA-256 checksums for UniDic release assets.
+    /// Generate SHA-256 checksums for Japanese release assets.
     UnidicArtifactReleaseChecksums(ReleaseChecksumsArgs),
-    /// Measure runtime loading and comparison for a UniDic artifact.
+    /// Measure runtime loading and comparison for a Japanese artifact.
     UnidicArtifactRuntimeMeasure(UnidicArtifactRuntimeMeasureArgs),
-    /// Verify a UniDic dictionary artifact bundle.
+    /// Verify a Japanese dictionary artifact bundle.
     UnidicArtifactVerify(UnidicArtifactVerifyArgs),
     /// Show UniDic CSV readings for a surface.
     UnidicCsvReadings(UnidicCsvReadingsArgs),
@@ -472,10 +523,15 @@ impl CliCommand {
             Self::CedictReadings(args) => CliAction::CedictReadings(args.into_options()),
             Self::CedictSequences(args) => CliAction::CedictSequences(args.into_options()),
             Self::ChineseCompare(args) => CliAction::ChineseCompare(args.into_options()),
-            Self::Compare(args) => CliAction::Compare(args.into_options()),
+            Self::Compare(args) => CliAction::Compare(args.into_options()?),
             Self::Download(args) => CliAction::Download(args.into_options()),
             Self::List(args) => CliAction::List(args.into_options()),
             Self::Where(args) => CliAction::Where(args.into_options()),
+            Self::SudachiArtifactBundle(args) => {
+                CliAction::SudachiArtifactBundle(args.into_options())
+            }
+            Self::SudachiCsvReadings(args) => CliAction::SudachiCsvReadings(args.into_options()),
+            Self::SudachiCsvSequences(args) => CliAction::SudachiCsvSequences(args.into_options()),
             Self::ZhArtifactArchive(args) => CliAction::ZhArtifactArchive(args.into_options()),
             Self::ZhArtifactBundle(args) => CliAction::ZhArtifactBundle(args.into_options()),
             Self::ZhArtifactInspect(args) => CliAction::ZhArtifactInspect(args.into_options()),
@@ -530,6 +586,9 @@ pub(crate) enum CliAction {
     Download(DownloadCliOptions),
     List(CacheCliOptions),
     Where(WhereCliOptions),
+    SudachiArtifactBundle(SudachiArtifactBundleCliOptions),
+    SudachiCsvReadings(SudachiCsvReadingsOptions),
+    SudachiCsvSequences(SudachiCsvSequencesOptions),
     ZhArtifactArchive(ZhArtifactArchiveCliOptions),
     ZhArtifactBundle(ZhArtifactBundleCliOptions),
     ZhArtifactInspect(ZhArtifactInspectCliOptions),
@@ -554,16 +613,22 @@ pub(crate) enum CliAction {
 
 #[derive(Clone, Debug, Args)]
 struct DownloadArgs {
-    #[arg(value_parser = parse_artifact_language_clap, value_name = "ja|zh")]
+    /// Artifact selector to install.
+    #[arg(value_parser = parse_artifact_language_clap, value_name = "ja|ja-unidic|ja-sudachi|zh")]
     language: ArtifactLanguage,
+    /// Override the baked-in artifact archive URL with a URL or local path.
     #[arg(long)]
     url: Option<String>,
+    /// SHA-256 checksum manifest URL or local path.
     #[arg(long = "checksum-url")]
     checksum_url: Option<String>,
+    /// Expected SHA-256 hex digest for the archive.
     #[arg(long)]
     sha256: Option<String>,
+    /// Artifact cache directory.
     #[arg(long = "cache-dir")]
     cache_dir: Option<String>,
+    /// Replace an existing cached artifact directory.
     #[arg(long)]
     force: bool,
 }
@@ -583,6 +648,7 @@ impl DownloadArgs {
 
 #[derive(Clone, Debug, Args)]
 struct CacheArgs {
+    /// Artifact cache directory.
     #[arg(long = "cache-dir")]
     cache_dir: Option<String>,
 }
@@ -597,8 +663,10 @@ impl CacheArgs {
 
 #[derive(Clone, Debug, Args)]
 struct WhereArgs {
-    #[arg(value_parser = parse_artifact_language_clap, value_name = "ja|zh")]
+    /// Optional artifact selector to locate.
+    #[arg(value_parser = parse_artifact_language_clap, value_name = "ja|ja-unidic|ja-sudachi|zh")]
     language: Option<ArtifactLanguage>,
+    /// Artifact cache directory.
     #[arg(long = "cache-dir")]
     cache_dir: Option<String>,
 }
@@ -614,8 +682,10 @@ impl WhereArgs {
 
 #[derive(Clone, Debug, Args)]
 struct PinyinIndexArgs {
+    /// Pinyin representation to index.
     #[arg(long = "pinyin-view", value_parser = parse_pinyin_view_clap, value_name = "no-tone|tone3", default_value = "no-tone")]
     pinyin_view: PinyinView,
+    /// Maximum readings stored for each written Chinese surface.
     #[arg(long = "max-readings-per-surface")]
     max_readings_per_surface: Option<usize>,
 }
@@ -631,12 +701,16 @@ impl PinyinIndexArgs {
 
 #[derive(Clone, Debug, Args)]
 struct PinyinReadingArgs {
+    /// Maximum readings expanded for each matched segment.
     #[arg(long = "max-readings-per-segment")]
     max_readings_per_segment: Option<usize>,
+    /// Maximum source-text span considered for dictionary lookup.
     #[arg(long = "max-span-chars")]
     max_span_chars: Option<usize>,
+    /// Maximum reading paths kept after expansion.
     #[arg(long = "max-paths")]
     max_paths: Option<usize>,
+    /// Keep only longest dictionary matches at each expansion step.
     #[arg(long = "longest-only")]
     longest_only: bool,
 }
@@ -662,12 +736,16 @@ impl PinyinReadingArgs {
 
 #[derive(Clone, Debug, Args)]
 struct UnidicIndexArgs {
+    /// UniDic CSV field used as the reading source.
     #[arg(long = "field", value_parser = parse_unidic_reading_field_clap, value_name = "lform|pron", default_value = "pron")]
     field: UnidicReadingField,
+    /// Maximum readings stored for each surface while indexing UniDic CSV.
     #[arg(long = "max-readings-per-surface")]
     max_readings_per_surface: Option<usize>,
+    /// Keep ASCII-only UniDic surfaces instead of filtering them out.
     #[arg(long = "include-ascii-surfaces")]
     include_ascii_surfaces: bool,
+    /// Keep entries whose coarse part of speech is a symbol.
     #[arg(long = "include-symbol-pos")]
     include_symbol_pos: bool,
 }
@@ -689,14 +767,118 @@ impl UnidicIndexArgs {
     }
 }
 
+#[derive(Clone, Debug, Args)]
+struct SudachiIndexArgs {
+    /// Maximum readings stored for each surface while indexing Sudachi CSV.
+    #[arg(long = "max-readings-per-surface")]
+    max_readings_per_surface: Option<usize>,
+    /// Keep ASCII-only Sudachi surfaces instead of filtering them out.
+    #[arg(long = "include-ascii-surfaces")]
+    include_ascii_surfaces: bool,
+    /// Keep entries whose coarse part of speech is a symbol.
+    #[arg(long = "include-symbol-pos")]
+    include_symbol_pos: bool,
+    /// Do not add Sudachi normalized-form aliases as lookup surfaces.
+    #[arg(long = "no-normalized-surfaces")]
+    no_normalized_surfaces: bool,
+    /// Drop Sudachi readings the current romaji converter cannot use.
+    #[arg(long = "exclude-unsupported-readings")]
+    exclude_unsupported_readings: bool,
+}
+
+impl SudachiIndexArgs {
+    fn into_options(self) -> SudachiIndexOptions {
+        let mut options = SudachiIndexOptions {
+            max_readings_per_surface: self.max_readings_per_surface,
+            ..SudachiIndexOptions::default()
+        };
+        if self.include_ascii_surfaces {
+            options.exclude_ascii_surfaces = false;
+        }
+        if self.include_symbol_pos {
+            options.exclude_symbol_pos = false;
+        }
+        if self.no_normalized_surfaces {
+            options.include_normalized_surfaces = false;
+        }
+        if self.exclude_unsupported_readings {
+            options.exclude_unsupported_readings = true;
+        }
+        options
+    }
+}
+
+#[derive(Clone, Debug, Args)]
+struct JapaneseCompareIndexArgs {
+    /// UniDic CSV field used as the reading source.
+    #[arg(long = "field", value_parser = parse_unidic_reading_field_clap, value_name = "lform|pron")]
+    field: Option<UnidicReadingField>,
+    /// Maximum readings stored for each surface while indexing CSV.
+    #[arg(long = "max-readings-per-surface")]
+    max_readings_per_surface: Option<usize>,
+    /// Keep ASCII-only CSV surfaces instead of filtering them out.
+    #[arg(long = "include-ascii-surfaces")]
+    include_ascii_surfaces: bool,
+    /// Keep entries whose coarse part of speech is a symbol.
+    #[arg(long = "include-symbol-pos")]
+    include_symbol_pos: bool,
+    /// Do not add Sudachi normalized-form aliases as lookup surfaces.
+    #[arg(long = "no-normalized-surfaces")]
+    no_normalized_surfaces: bool,
+    /// Drop Sudachi readings the current romaji converter cannot use.
+    #[arg(long = "exclude-unsupported-readings")]
+    exclude_unsupported_readings: bool,
+}
+
+impl JapaneseCompareIndexArgs {
+    fn unidic_options(&self) -> UnidicIndexOptions {
+        let mut options = UnidicIndexOptions {
+            reading_field: self.field.unwrap_or(UnidicReadingField::Pron),
+            max_readings_per_surface: self.max_readings_per_surface,
+            ..UnidicIndexOptions::default()
+        };
+        if self.include_ascii_surfaces {
+            options.exclude_ascii_surfaces = false;
+        }
+        if self.include_symbol_pos {
+            options.exclude_symbol_pos = false;
+        }
+        options
+    }
+
+    fn sudachi_options(&self) -> SudachiIndexOptions {
+        let mut options = SudachiIndexOptions {
+            max_readings_per_surface: self.max_readings_per_surface,
+            ..SudachiIndexOptions::default()
+        };
+        if self.include_ascii_surfaces {
+            options.exclude_ascii_surfaces = false;
+        }
+        if self.include_symbol_pos {
+            options.exclude_symbol_pos = false;
+        }
+        if self.no_normalized_surfaces {
+            options.include_normalized_surfaces = false;
+        }
+        if self.exclude_unsupported_readings {
+            options.exclude_unsupported_readings = true;
+        }
+        options
+    }
+}
+
 #[derive(Clone, Copy, Debug, Args)]
 struct UnidicReadingArgs {
+    /// Maximum readings expanded for each matched segment.
     #[arg(long = "max-readings-per-segment")]
     max_readings_per_segment: Option<usize>,
+    /// Maximum source-text span considered for dictionary lookup.
     #[arg(long = "max-span-chars")]
     max_span_chars: Option<usize>,
+    /// Maximum reading paths kept after expansion.
     #[arg(long = "max-paths")]
     max_paths: Option<usize>,
+    /// Keep only longest dictionary matches at each expansion step.
     #[arg(long = "longest-only")]
     longest_only: bool,
 }
@@ -825,12 +1007,19 @@ impl ChineseCompareArgs {
 #[command(
     group(
         ArgGroup::new("comparison_method")
-            .args(["overrides", "lex_csv", "artifact_payload", "artifact_metadata"])
+            .args([
+                "overrides",
+                "lex_csv",
+                "sudachi_lex_csv",
+                "artifact_payload",
+                "artifact_metadata",
+            ])
             .required(true)
             .multiple(true),
     ),
     group(ArgGroup::new("dictionary_source").args([
         "lex_csv",
+        "sudachi_lex_csv",
         "artifact_payload",
         "artifact_metadata",
     ])),
@@ -844,6 +1033,8 @@ struct CompareArgs {
     overrides: Option<String>,
     #[arg(long = "lex-csv")]
     lex_csv: Option<String>,
+    #[arg(long = "sudachi-lex-csv")]
+    sudachi_lex_csv: Option<String>,
     #[arg(long = "artifact-payload")]
     artifact_payload: Option<String>,
     #[arg(long = "artifact-metadata")]
@@ -855,27 +1046,104 @@ struct CompareArgs {
     #[arg(long = "output-format", value_parser = parse_romaji_lattice_output_format_clap, value_name = "dot|svg|png", default_value = "svg")]
     output_format: RomajiLatticeOutputFormat,
     #[command(flatten)]
-    index: UnidicIndexArgs,
+    index: JapaneseCompareIndexArgs,
     #[command(flatten)]
     reading: UnidicReadingArgs,
 }
 
 impl CompareArgs {
-    fn into_options(self) -> CompareOptions {
-        CompareOptions {
+    fn into_options(self) -> Result<CompareOptions, CliError> {
+        self.validate_source_options()?;
+        let index_options = self.index.unidic_options();
+        let sudachi_index_options = self.index.sudachi_options();
+        Ok(CompareOptions {
             left: self.left,
             right: self.right,
             overrides: self.overrides,
             lex_csv: self.lex_csv,
+            sudachi_lex_csv: self.sudachi_lex_csv,
             artifact_payload: self.artifact_payload,
             artifact_metadata: self.artifact_metadata,
             payload_format: self.payload_format,
             romaji_lattice: self.romaji_lattice,
             output_format: self.output_format,
-            index_options: self.index.into_options(),
+            index_options,
+            sudachi_index_options,
             dictionary_options: self.reading.into_options(),
             dictionary_option_overrides: self.reading.into_overrides(),
+        })
+    }
+
+    fn validate_source_options(&self) -> Result<(), CliError> {
+        if self.sudachi_lex_csv.is_some() && self.index.field.is_some() {
+            return Err(CliError::IncompatibleArgument {
+                arg: "--field",
+                source: "--sudachi-lex-csv",
+                expected: "use --field only with --lex-csv",
+            });
         }
+
+        if self.lex_csv.is_some() {
+            self.reject_sudachi_only_options("--lex-csv")?;
+        }
+        if self.artifact_payload.is_some() {
+            self.reject_csv_build_options("--artifact-payload")?;
+        }
+        if self.artifact_metadata.is_some() {
+            self.reject_csv_build_options("--artifact-metadata")?;
+        }
+
+        Ok(())
+    }
+
+    fn reject_sudachi_only_options(&self, source: &'static str) -> Result<(), CliError> {
+        if self.index.no_normalized_surfaces {
+            return Err(CliError::IncompatibleArgument {
+                arg: "--no-normalized-surfaces",
+                source,
+                expected: "use Sudachi normalized-form options only with --sudachi-lex-csv",
+            });
+        }
+        if self.index.exclude_unsupported_readings {
+            return Err(CliError::IncompatibleArgument {
+                arg: "--exclude-unsupported-readings",
+                source,
+                expected: "use Sudachi reading-filter options only with --sudachi-lex-csv",
+            });
+        }
+        Ok(())
+    }
+
+    fn reject_csv_build_options(&self, source: &'static str) -> Result<(), CliError> {
+        if self.index.field.is_some() {
+            return Err(CliError::IncompatibleArgument {
+                arg: "--field",
+                source,
+                expected: "CSV index options are ignored for artifact sources",
+            });
+        }
+        if self.index.max_readings_per_surface.is_some() {
+            return Err(CliError::IncompatibleArgument {
+                arg: "--max-readings-per-surface",
+                source,
+                expected: "CSV index options are ignored for artifact sources",
+            });
+        }
+        if self.index.include_ascii_surfaces {
+            return Err(CliError::IncompatibleArgument {
+                arg: "--include-ascii-surfaces",
+                source,
+                expected: "CSV index options are ignored for artifact sources",
+            });
+        }
+        if self.index.include_symbol_pos {
+            return Err(CliError::IncompatibleArgument {
+                arg: "--include-symbol-pos",
+                source,
+                expected: "CSV index options are ignored for artifact sources",
+            });
+        }
+        self.reject_sudachi_only_options(source)
     }
 }
 
@@ -1085,6 +1353,49 @@ impl UnidicCsvReadingsArgs {
 }
 
 #[derive(Clone, Debug, Args)]
+struct SudachiCsvSequencesArgs {
+    #[arg(long)]
+    text: String,
+    #[arg(long = "lex-csv")]
+    lex_csv: String,
+    #[command(flatten)]
+    index: SudachiIndexArgs,
+    #[command(flatten)]
+    reading: UnidicReadingArgs,
+}
+
+impl SudachiCsvSequencesArgs {
+    fn into_options(self) -> SudachiCsvSequencesOptions {
+        SudachiCsvSequencesOptions {
+            text: self.text,
+            lex_csv: self.lex_csv,
+            index_options: self.index.into_options(),
+            dictionary_options: self.reading.into_options(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Args)]
+struct SudachiCsvReadingsArgs {
+    #[arg(long)]
+    surface: String,
+    #[arg(long = "lex-csv")]
+    lex_csv: String,
+    #[command(flatten)]
+    index: SudachiIndexArgs,
+}
+
+impl SudachiCsvReadingsArgs {
+    fn into_options(self) -> SudachiCsvReadingsOptions {
+        SudachiCsvReadingsOptions {
+            surface: self.surface,
+            lex_csv: self.lex_csv,
+            index_options: self.index.into_options(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Args)]
 struct UnidicArtifactMetadataArgs {
     #[arg(long = "lex-csv")]
     lex_csv: String,
@@ -1157,6 +1468,58 @@ impl UnidicArtifactBundleArgs {
             source_name: self.source_name,
             source_version: self.source_version,
             license_dir: self.license_dir,
+            index_options: self.index.into_options(),
+            dictionary_options: self.reading.into_options(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Args)]
+struct SudachiArtifactBundleArgs {
+    /// Concatenated Sudachi raw lexicon CSV path.
+    #[arg(long = "lex-csv")]
+    lex_csv: String,
+    /// Output directory for the generated artifact bundle.
+    #[arg(long = "output-dir")]
+    output_dir: String,
+    /// Artifact name written into metadata and used for the payload file name.
+    #[arg(
+        long = "artifact-name",
+        default_value = "moine-sudachi-full-reading-index"
+    )]
+    artifact_name: String,
+    /// Payload format to write.
+    #[arg(long = "payload-format", value_parser = parse_artifact_payload_format_clap, value_name = "yaml|binary|indexed", default_value = "indexed")]
+    payload_format: ArtifactPayloadFormat,
+    /// Source dictionary name written into metadata.
+    #[arg(long = "source-name", default_value = "SudachiDict")]
+    source_name: String,
+    /// SudachiDict source version written into metadata.
+    #[arg(long = "source-version")]
+    source_version: String,
+    /// SudachiDict LICENSE-2.0.txt file to copy into the bundle.
+    #[arg(long = "license-file")]
+    license_file: String,
+    /// SudachiDict LEGAL notice file to copy into the bundle.
+    #[arg(long = "legal-file")]
+    legal_file: String,
+    #[command(flatten)]
+    index: SudachiIndexArgs,
+    #[command(flatten)]
+    reading: UnidicReadingArgs,
+}
+
+impl SudachiArtifactBundleArgs {
+    fn into_options(self) -> SudachiArtifactBundleCliOptions {
+        SudachiArtifactBundleCliOptions {
+            lex_csv: self.lex_csv,
+            output_dir: self.output_dir,
+            artifact_name: self.artifact_name,
+            payload_format: self.payload_format,
+            source_name: self.source_name,
+            source_version: self.source_version,
+            license_file: self.license_file,
+            legal_file: self.legal_file,
             index_options: self.index.into_options(),
             dictionary_options: self.reading.into_options(),
         }
@@ -1440,6 +1803,16 @@ impl_parse_with_command!(
     UnidicCsvReadings
 );
 impl_parse_with_command!(
+    SudachiCsvSequencesOptions,
+    "sudachi-csv-sequences",
+    SudachiCsvSequences
+);
+impl_parse_with_command!(
+    SudachiCsvReadingsOptions,
+    "sudachi-csv-readings",
+    SudachiCsvReadings
+);
+impl_parse_with_command!(
     UnidicArtifactMetadataCliOptions,
     "unidic-artifact-metadata",
     UnidicArtifactMetadata
@@ -1448,6 +1821,11 @@ impl_parse_with_command!(
     UnidicArtifactBundleCliOptions,
     "unidic-artifact-bundle",
     UnidicArtifactBundle
+);
+impl_parse_with_command!(
+    SudachiArtifactBundleCliOptions,
+    "sudachi-artifact-bundle",
+    SudachiArtifactBundle
 );
 impl_parse_with_command!(
     UnidicArtifactArchiveCliOptions,
@@ -1594,12 +1972,15 @@ pub(crate) fn default_unidic_license_dir(lex_csv: &str) -> PathBuf {
 
 pub(crate) fn parse_artifact_language(value: &str) -> Result<ArtifactLanguage, CliError> {
     match value {
-        "ja" | "japanese" => Ok(ArtifactLanguage::Japanese),
+        "ja" | "ja-unidic" | "japanese" | "japanese-unidic" | "unidic" => {
+            Ok(ArtifactLanguage::Japanese)
+        }
+        "ja-sudachi" | "japanese-sudachi" | "sudachi" => Ok(ArtifactLanguage::JapaneseSudachi),
         "zh" | "chinese" => Ok(ArtifactLanguage::Chinese),
         _ => Err(CliError::InvalidArgumentValue {
             name: "lang",
             value: value.to_string(),
-            expected: "ja or zh",
+            expected: "ja, ja-unidic, ja-sudachi, or zh",
         }),
     }
 }
@@ -1700,6 +2081,11 @@ pub(crate) enum CliError {
         command: String,
         hint: String,
     },
+    IncompatibleArgument {
+        arg: &'static str,
+        source: &'static str,
+        expected: &'static str,
+    },
     ArtifactVerificationFailed(String),
 }
 
@@ -1729,6 +2115,14 @@ impl fmt::Display for CliError {
                     "required command {command:?} was not found in PATH; {hint}"
                 )
             }
+            Self::IncompatibleArgument {
+                arg,
+                source,
+                expected,
+            } => write!(
+                f,
+                "argument {arg} is incompatible with {source}; {expected}"
+            ),
             Self::ArtifactVerificationFailed(message) => {
                 write!(f, "artifact verification failed: {message}")
             }

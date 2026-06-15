@@ -5,7 +5,14 @@ language-aware comparison:
 
 ```bash
 uv pip install moine
+# Default Japanese artifact: UniDic-CWJ
 uv run python -m moine download ja
+
+# Explicit Japanese sources
+uv run python -m moine download ja-unidic
+uv run python -m moine download ja-sudachi
+
+# Chinese artifact: CC-CEDICT
 uv run python -m moine download zh
 ```
 
@@ -19,6 +26,12 @@ language:
 2
 
 >>> moine.distance("もいにゃ", "モイニャ", lang="ja")
+0
+
+>>> moine.distance("じゅじゅつかいせん", "呪術廻戦", lang="ja-unidic")
+5
+
+>>> moine.distance("じゅじゅつかいせん", "呪術廻戦", lang="ja-sudachi")
 0
 
 >>> moine.partial_ratio("ウイスキー", "ういすきーをのんでいます", lang="ja")

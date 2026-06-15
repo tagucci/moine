@@ -37,6 +37,8 @@ ambiguity in input sequences.
 
 - Japanese comparison with
   [UniDic-CWJ](https://clrd.ninjal.ac.jp/unidic/download.html)-derived reading
+  artifacts and separate
+  [SudachiDict](https://github.com/WorksApplications/SudachiDict)-derived
   artifacts.
 - Chinese comparison with
   [CC-CEDICT](https://cc-cedict.org/wiki/)-derived no-tone pinyin artifacts.
@@ -79,12 +81,26 @@ The packages do not bundle dictionary data. Download the language artifacts you
 need explicitly:
 
 ```bash
+# Default Japanese artifact: UniDic-CWJ
 uv run python -m moine download ja
+
+# Explicit Japanese sources
+uv run python -m moine download ja-unidic
+uv run python -m moine download ja-sudachi
+
+# Chinese artifact: CC-CEDICT
 uv run python -m moine download zh
 
+# Same selectors are available from the Rust CLI.
 moine download ja
+moine download ja-unidic
+moine download ja-sudachi
 moine download zh
 ```
+
+`ja` is the short default selector for the current Japanese artifact, which is
+UniDic-CWJ. Use `ja-unidic` or `ja-sudachi` when the dictionary source should be
+explicit.
 
 ## Quick Start
 
@@ -167,6 +183,9 @@ moine chinese-compare --left weishiji --right 威士忌 \
   --artifact-metadata /path/to/moine-cedict-20260520/metadata.yaml
 ```
 
+Use `moine download ja-unidic` for explicit UniDic-CWJ and
+`moine download ja-sudachi` for SudachiDict-full.
+
 The artifact bundle, verification, archive, and diagnostic commands are
 maintainer-facing tools for producing and checking release assets. They are
 documented in [docs/development.md](docs/development.md) and
@@ -239,7 +258,8 @@ possible reading paths before edit distance is computed.
 mòine source code is licensed under either MIT or Apache-2.0. See
 [LICENSE-MIT](LICENSE-MIT) and [LICENSE-APACHE](LICENSE-APACHE).
 
-Dictionary data is separate. UniDic-derived and CC-CEDICT-derived artifacts
-carry their own license and attribution metadata, and should keep dictionary
-license information separate from the mòine source-code license. See
+Dictionary data is separate. UniDic-derived, SudachiDict-derived, and
+CC-CEDICT-derived artifacts carry their own license and attribution metadata,
+and should keep dictionary license information separate from the mòine
+source-code license. See
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

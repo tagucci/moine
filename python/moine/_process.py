@@ -153,6 +153,8 @@ def _iter_choices(choices: Choices) -> Iterable[tuple[str, ChoiceKey]]:
 
 
 def _scorer_kind(scorer: Scorer) -> ScorerKind:
+    if not isinstance(scorer, str):
+        raise TypeError("scorer must be a str")
     if scorer in {"distance", "damerau_distance"}:
         return "distance"
     if scorer == "normalized_distance":

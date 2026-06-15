@@ -28,6 +28,11 @@ fn run_action(action: CliAction) -> Result<(), Box<dyn Error>> {
         CliAction::Download(options) => download::run_download(options),
         CliAction::List(options) => download::run_download_list(options),
         CliAction::Where(options) => download::run_download_where(options),
+        CliAction::SudachiArtifactBundle(options) => {
+            unidic_artifact::run_sudachi_artifact_bundle(options)
+        }
+        CliAction::SudachiCsvReadings(options) => compare::run_sudachi_csv_readings(options),
+        CliAction::SudachiCsvSequences(options) => compare::run_sudachi_csv_sequences(options),
         CliAction::ZhArtifactArchive(options) => zh_artifact::run_zh_artifact_archive(options),
         CliAction::ZhArtifactBundle(options) => zh_artifact::run_zh_artifact_bundle(options),
         CliAction::ZhArtifactInspect(options) => zh_artifact::run_zh_artifact_inspect(options),

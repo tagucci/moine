@@ -186,6 +186,8 @@ def test_low_level_distance_helpers():
         moine.partial_ratio("abc", "xxabczz", score_cutoff=1.1)
     with pytest.raises(ValueError, match="metric"):
         moine.partial_alignment("abc", "abc", metric="normalized_similarity")
+    with pytest.raises(TypeError, match="metric must be a str"):
+        moine.partial_alignment("abc", "abc", metric=1)
     with pytest.raises(ValueError, match="max_span_chars"):
         moine.partial_alignment("abc", "abc", max_span_chars=-1)
     with pytest.raises(ValueError, match="max_span_chars"):
@@ -202,6 +204,10 @@ def test_low_level_distance_helpers():
         moine.within_damerau_distance_paths(["abc"], ["adc"], True)
     with pytest.raises(TypeError, match="requires lang or dictionary"):
         moine.cdist(["abc"], ["abc"], max_paths=1)
+    with pytest.raises(TypeError, match="lang must be a str"):
+        moine.distance("abc", "abc", lang=1)
+    with pytest.raises(TypeError, match="metric must be a str"):
+        moine.cdist(["abc"], ["abc"], metric=1)
 
 
 def test_package_includes_type_markers():
@@ -544,6 +550,8 @@ def test_ja_process_extract_distance_and_ratio(tmp_path):
 
     with pytest.raises(ValueError, match="scorer"):
         process.extract("abc", ["abc"], dictionary=dictionary, scorer="unknown")
+    with pytest.raises(TypeError, match="scorer must be a str"):
+        process.extract("abc", ["abc"], dictionary=dictionary, scorer=1)
 
 
 def test_ja_bundle_accepts_legacy_fnv_checksum(tmp_path):

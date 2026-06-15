@@ -14,7 +14,7 @@ Dictionary = JapaneseDictionary
 
 
 def load_bundle(metadata_path: StrPath, bundle_dir: StrPath | None = None) -> JapaneseDictionary:
-    """Load a UniDic artifact bundle from metadata.yaml or a bundle directory."""
+    """Load a Japanese reading artifact bundle from metadata.yaml or a bundle directory."""
 
     metadata_path = os.fspath(metadata_path)
     if bundle_dir is not None:

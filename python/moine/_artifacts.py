@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-Language = Literal["ja", "zh"]
+Language = Literal["ja", "ja-unidic", "ja-sudachi", "zh"]
 
 
 @dataclass(frozen=True)
@@ -32,11 +32,33 @@ _MAX_CHECKSUM_MANIFEST_BYTES = 1024 * 1024
 ARTIFACT_SPECS: dict[Language, ArtifactSpec] = {
     "ja": ArtifactSpec(
         lang="ja",
+        label="Japanese UniDic-CWJ default",
+        artifact_name="moine-unidic-cwj-202512",
+        archive_name="moine-unidic-cwj-202512.tar.gz",
+        archive_url=(
+            f"{_RELEASE_BASE_URL}/unidic-cwj-202512-v0.1.1/moine-unidic-cwj-202512.tar.gz"
+        ),
+        checksum_url=None,
+    ),
+    "ja-unidic": ArtifactSpec(
+        lang="ja-unidic",
         label="Japanese UniDic-CWJ",
         artifact_name="moine-unidic-cwj-202512",
         archive_name="moine-unidic-cwj-202512.tar.gz",
         archive_url=(
             f"{_RELEASE_BASE_URL}/unidic-cwj-202512-v0.1.1/moine-unidic-cwj-202512.tar.gz"
+        ),
+        checksum_url=None,
+    ),
+    "ja-sudachi": ArtifactSpec(
+        lang="ja-sudachi",
+        label="Japanese SudachiDict-full",
+        artifact_name="moine-sudachi-full-20260428",
+        archive_name="moine-sudachi-full-20260428.tar.gz",
+        archive_url=(
+            f"{_RELEASE_BASE_URL}/"
+            "moine-sudachi-full-20260428-v0.2.0/"
+            "moine-sudachi-full-20260428.tar.gz"
         ),
         checksum_url=None,
     ),
@@ -54,11 +76,17 @@ ARTIFACT_SPECS: dict[Language, ArtifactSpec] = {
 
 
 def normalize_lang(lang: str) -> Language:
+    if not isinstance(lang, str):
+        raise TypeError("lang must be a str")
     if lang == "ja":
         return "ja"
+    if lang in {"ja-unidic", "unidic"}:
+        return "ja-unidic"
+    if lang in {"ja-sudachi", "sudachi"}:
+        return "ja-sudachi"
     if lang == "zh":
         return "zh"
-    raise ValueError("lang must be 'ja' or 'zh'")
+    raise ValueError("lang must be 'ja', 'ja-unidic', 'ja-sudachi', or 'zh'")
 
 
 def default_cache_dir() -> Path:
@@ -173,7 +201,7 @@ def _cache_dir_arg(cache_dir: Path | None) -> Path:
 
 
 def _verify_extracted_bundle(lang: Language, metadata: Path) -> None:
-    if lang == "ja":
+    if lang in {"ja", "ja-unidic", "ja-sudachi"}:
         from ._moine import JapaneseDictionary
 
         JapaneseDictionary.load_bundle(os.fspath(metadata))

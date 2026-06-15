@@ -31,11 +31,19 @@ RUSTDOCFLAGS='-D warnings' cargo doc --workspace --no-deps
 cargo rustdoc -p moine --lib -- -W missing_docs
 cargo rustdoc -p moine-core --lib -- -W missing_docs
 
-uv run --with '.[test]' python -m pytest python/tests
-uv run --with '.[dev]' ruff check python
-uv run --with '.[dev]' ruff format --check python
-uv run --with '.[dev]' ty check
+WHEEL_DIR=$(mktemp -d)
+uv run --no-project --with 'maturin>=1.9,<2' maturin build --out "$WHEEL_DIR"
+WHEEL=$(ls "$WHEEL_DIR"/moine-*.whl)
+uv run --no-project --with 'pytest>=8,<9' --with "$WHEEL" python -m pytest python/tests
+uv run --no-project --with 'ruff>=0.14,<0.15' ruff check python
+uv run --no-project --with 'ruff>=0.14,<0.15' ruff format --check python
+uv run --no-project --with 'ty>=0.0.38,<0.1' ty check
 ```
+
+The Python checks intentionally use `--no-project`. That keeps `uv` from
+installing `moine` itself into the temporary tool environment. The pytest step
+first builds a fresh local wheel and installs that wheel explicitly so cached
+`moine` wheels with the same version cannot shadow the checkout.
 
 Run the local artifact smoke script:
 
@@ -82,6 +90,7 @@ Use the language-specific release scripts for dictionary bundles:
 
 ```bash
 scripts/release-unidic-cwj.sh --help
+scripts/release-sudachi-full.sh --help
 scripts/release-cedict.sh --help
 ```
 
@@ -93,9 +102,10 @@ Each artifact release should include:
   or attribution files
 - a short release note under `docs/releases/`
 
-The first public UniDic-CWJ and CC-CEDICT artifact releases include both
-`*.tar.gz` and `*.tar.zst` archives. Downloaders use the gzip assets by default;
-the zstd assets are provided for users who prefer faster local extraction.
+The public UniDic-CWJ, SudachiDict-full, and CC-CEDICT artifact releases include
+both `*.tar.gz` and `*.tar.zst` archives. Downloaders use the gzip assets by
+default; the zstd assets are provided for users who prefer faster local
+extraction.
 
 `SHA256SUMS` is optional. Generate it only for releases that need an external
 checksum manifest in addition to the bundle metadata and payload digests.
@@ -107,6 +117,8 @@ these exact names:
 
 - `unidic-cwj-202512-v0.1.1/moine-unidic-cwj-202512.tar.gz`
 - `unidic-cwj-202512-v0.1.1/moine-unidic-cwj-202512.tar.zst`
+- `moine-sudachi-full-20260428-v0.2.0/moine-sudachi-full-20260428.tar.gz`
+- `moine-sudachi-full-20260428-v0.2.0/moine-sudachi-full-20260428.tar.zst`
 - `moine-cedict-20260520-v0.1.1/moine-cedict-20260520.tar.gz`
 - `moine-cedict-20260520-v0.1.1/moine-cedict-20260520.tar.zst`
 
@@ -120,7 +132,11 @@ Then smoke-test both downloaders from an empty cache:
 ```bash
 tmp="$(mktemp -d)"
 MOINE_CACHE_DIR="$tmp/python-cache" uv run python -m moine download ja
+MOINE_CACHE_DIR="$tmp/python-cache" uv run python -m moine download ja-unidic
+MOINE_CACHE_DIR="$tmp/python-cache" uv run python -m moine download ja-sudachi
 MOINE_CACHE_DIR="$tmp/python-cache" uv run python -m moine download zh
 MOINE_CACHE_DIR="$tmp/rust-cache" moine download ja
+MOINE_CACHE_DIR="$tmp/rust-cache" moine download ja-unidic
+MOINE_CACHE_DIR="$tmp/rust-cache" moine download ja-sudachi
 MOINE_CACHE_DIR="$tmp/rust-cache" moine download zh
 ```

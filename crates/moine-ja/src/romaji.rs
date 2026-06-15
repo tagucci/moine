@@ -69,7 +69,9 @@ pub fn romaji_lattice(input: &str) -> Result<Lattice, JaLatticeError> {
 }
 
 pub(crate) fn can_build_romaji_paths(input: &str) -> bool {
-    romaji_paths(input).is_ok()
+    segment(input)
+        .and_then(|units| validate_romaji_units(&units))
+        .is_ok()
 }
 
 /// Builds a compact romaji lattice from one or more kana readings.
@@ -202,6 +204,45 @@ fn romaji_symbol_paths(input: &str) -> Result<Vec<Vec<Symbol>>, JaLatticeError> 
     romaji_symbol_paths_from_units(&units)
 }
 
+fn validate_romaji_units(units: &[Unit]) -> Result<(), JaLatticeError> {
+    let mut i = 0;
+
+    while i < units.len() {
+        if matches!(&units[i], Unit::Kana(unit) if unit == "ー") {
+            i += 1;
+            continue;
+        }
+
+        if units
+            .get(i + 1)
+            .is_some_and(|next| can_combine_ascii_small_kana(&units[i], next))
+        {
+            i += 2;
+            continue;
+        }
+
+        if matches!(&units[i], Unit::Kana(unit) if unit == "っ") {
+            if let Some(next) = units.get(i + 1) {
+                validate_variants_for_unit(next)?;
+            }
+        }
+
+        validate_variants_for_unit(&units[i])?;
+        i += 1;
+    }
+
+    Ok(())
+}
+
+fn validate_variants_for_unit(unit: &Unit) -> Result<(), JaLatticeError> {
+    match unit {
+        Unit::Ascii(_) => Ok(()),
+        Unit::Kana(unit) => variants_for(unit)
+            .map(|_| ())
+            .ok_or_else(|| JaLatticeError::MissingVariant { unit: unit.clone() }),
+    }
+}
+
 fn romaji_paths_from_units(units: &[Unit]) -> Result<Vec<String>, JaLatticeError> {
     let mut paths = vec![String::new()];
     let mut i = 0;
@@ -308,28 +349,45 @@ fn sokuon_variants(next: Option<&Unit>) -> Result<Vec<String>, JaLatticeError> {
 }
 
 fn ascii_small_kana_variants(current: &Unit, next: &Unit) -> Option<Vec<String>> {
-    let Unit::Ascii(ch) = current else {
-        return None;
-    };
-    let Unit::Kana(kana) = next else {
-        return None;
-    };
-
-    let suffix = match kana.as_str() {
-        "ゃ" => "ya",
-        "ゅ" => "yu",
-        "ょ" => "yo",
-        _ => return None,
-    };
-    if !is_ascii_consonant(*ch) {
+    if !can_combine_ascii_small_kana(current, next) {
         return None;
     }
+
+    let Unit::Ascii(ch) = current else {
+        unreachable!("can_combine_ascii_small_kana requires an ASCII current unit");
+    };
+    let Unit::Kana(kana) = next else {
+        unreachable!("can_combine_ascii_small_kana requires a kana next unit");
+    };
+
+    let suffix = small_kana_ascii_suffix(kana)
+        .expect("can_combine_ascii_small_kana requires a supported small kana");
 
     let mut variants = vec![format!("{ch}{suffix}")];
     for small_kana_variant in variants_for_unit(next).ok()? {
         variants.push(format!("{ch}{small_kana_variant}"));
     }
     Some(variants)
+}
+
+fn can_combine_ascii_small_kana(current: &Unit, next: &Unit) -> bool {
+    let Unit::Ascii(ch) = current else {
+        return false;
+    };
+    let Unit::Kana(kana) = next else {
+        return false;
+    };
+
+    is_ascii_consonant(*ch) && small_kana_ascii_suffix(kana).is_some()
+}
+
+fn small_kana_ascii_suffix(kana: &str) -> Option<&'static str> {
+    Some(match kana {
+        "ゃ" => "ya",
+        "ゅ" => "yu",
+        "ょ" => "yo",
+        _ => return None,
+    })
 }
 
 fn is_ascii_consonant(ch: char) -> bool {
@@ -630,6 +688,13 @@ mod tests {
         assert_eq!(distance(&lattice, &Lattice::from_paths(["chadougu"])), 0);
         assert_eq!(distance(&lattice, &Lattice::from_paths(["chadoogu"])), 0);
         assert_eq!(distance(&lattice, &Lattice::from_paths(["chado-gu"])), 0);
+    }
+
+    #[test]
+    fn support_check_does_not_expand_all_romaji_paths() {
+        let input = "シー".repeat(32);
+
+        assert!(can_build_romaji_paths(&input));
     }
 
     #[test]

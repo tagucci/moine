@@ -83,6 +83,8 @@ jobs:
 
           check_asset "unidic-cwj-202512-v0.1.1" "moine-unidic-cwj-202512.tar.gz"
           check_asset "unidic-cwj-202512-v0.1.1" "moine-unidic-cwj-202512.tar.zst"
+          check_asset "moine-sudachi-full-20260428-v0.2.0" "moine-sudachi-full-20260428.tar.gz"
+          check_asset "moine-sudachi-full-20260428-v0.2.0" "moine-sudachi-full-20260428.tar.zst"
           check_asset "moine-cedict-20260520-v0.1.1" "moine-cedict-20260520.tar.gz"
           check_asset "moine-cedict-20260520-v0.1.1" "moine-cedict-20260520.tar.zst"
 

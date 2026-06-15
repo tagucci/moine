@@ -26,17 +26,24 @@ def payload_checksum(entries):
     return hashlib.sha256(data).hexdigest()
 
 
-def write_ja_bundle(root: Path) -> None:
+def write_ja_bundle(
+    root: Path,
+    *,
+    artifact_name: str = "moine-unidic-cwj-202512-test",
+    source_name: str = "UniDic-CWJ",
+    reading_field: str = "pron",
+    insatsu_reading: str = "インサツ",
+) -> None:
     root.mkdir(parents=True)
     payload_path = root / "readings.yaml"
     payload_path.write_text(
-        """\
+        f"""\
 schema_version: 1
 payload_type: moine.unidic.reading-index.surface-readings
 entries:
 - surface: 印刷
   readings:
-  - インサツ
+  - {insatsu_reading}
 """,
         encoding="utf-8",
     )
@@ -44,7 +51,7 @@ entries:
         f"""\
 schema_version: 1
 artifact_type: moine.unidic.reading-index
-artifact_name: moine-unidic-cwj-202512-test
+artifact_name: {artifact_name}
 generator: pytest
 payload:
   path: readings.yaml
@@ -52,13 +59,13 @@ payload:
   file_digest_algorithm: sha256-file-v1
   file_digest: {hashlib.sha256(payload_path.read_bytes()).hexdigest()}
   checksum_algorithm: sha256-canonical-v1
-  checksum: {payload_checksum([("印刷", ["インサツ"])])}
+  checksum: {payload_checksum([("印刷", [insatsu_reading])])}
 source:
-  name: UniDic-CWJ
+  name: {source_name}
   version: test
   lex_csv: lex.csv
 build:
-  reading_field: pron
+  reading_field: {reading_field}
   max_readings_per_surface: 16
   exclude_ascii_surfaces: true
   exclude_symbol_pos: true
@@ -83,6 +90,28 @@ def write_archive(tmp_path: Path) -> Path:
     with tarfile.open(archive, "w:gz") as tar:
         tar.add(bundle_dir, arcname=bundle_dir.name)
     return archive
+
+
+def write_sudachi_archive(tmp_path: Path) -> Path:
+    bundle_dir = tmp_path / "sudachi-bundle" / "moine-sudachi-full-20260428-test"
+    write_ja_bundle(
+        bundle_dir,
+        artifact_name="moine-sudachi-full-20260428-test",
+        source_name="SudachiDict",
+        reading_field="sudachi-reading",
+    )
+    archive = tmp_path / "moine-sudachi-full-20260428-test.tar.gz"
+    with tarfile.open(archive, "w:gz") as tar:
+        tar.add(bundle_dir, arcname=bundle_dir.name)
+    return archive
+
+
+def test_default_artifact_urls_and_japanese_aliases():
+    assert ARTIFACT_SPECS["ja"].artifact_name == ARTIFACT_SPECS["ja-unidic"].artifact_name
+    assert "unidic-cwj-202512-v0.1.1" in ARTIFACT_SPECS["ja"].archive_url
+    assert "unidic-cwj-202512-v0.1.1" in ARTIFACT_SPECS["ja-unidic"].archive_url
+    assert "moine-sudachi-full-20260428-v0.2.0" in ARTIFACT_SPECS["ja-sudachi"].archive_url
+    assert "moine-cedict-20260520-v0.1.1" in ARTIFACT_SPECS["zh"].archive_url
 
 
 def test_download_list_where_and_default_cache_lookup(tmp_path, monkeypatch, capsys):
@@ -112,6 +141,61 @@ def test_download_list_where_and_default_cache_lookup(tmp_path, monkeypatch, cap
     assert cli_main(["where", "ja", "--cache-dir", str(cache_dir)]) == 0
     assert capsys.readouterr().out.strip() == str(installed)
 
+    assert cli_main(["where", "ja-unidic", "--cache-dir", str(cache_dir)]) == 0
+    assert capsys.readouterr().out.strip() == str(installed)
+
+    monkeypatch.setenv("MOINE_CACHE_DIR", str(cache_dir))
+    moine.clear_default_dictionary(lang="ja")
+    moine.clear_default_dictionary(lang="ja-unidic")
+    try:
+        assert moine.distance("いんさt", "印刷", lang="ja") == 1
+        assert moine.distance("いんさt", "印刷", lang="ja-unidic") == 1
+    finally:
+        moine.clear_default_dictionary(lang="ja")
+        moine.clear_default_dictionary(lang="ja-unidic")
+
+
+def test_sudachi_download_where_and_cache_lookup(tmp_path, monkeypatch, capsys):
+    cache_dir = tmp_path / "cache"
+    archive = write_sudachi_archive(tmp_path)
+
+    assert (
+        cli_main(
+            [
+                "download",
+                "ja-sudachi",
+                "--url",
+                str(archive),
+                "--cache-dir",
+                str(cache_dir),
+            ]
+        )
+        == 0
+    )
+    installed = cache_dir / "moine-sudachi-full-20260428-test"
+    assert installed.is_dir()
+    assert capsys.readouterr().out.strip() == str(installed)
+
+    assert cli_main(["where", "ja-sudachi", "--cache-dir", str(cache_dir)]) == 0
+    assert capsys.readouterr().out.strip() == str(installed)
+
+    monkeypatch.setenv("MOINE_CACHE_DIR", str(cache_dir))
+    moine.clear_default_dictionary(lang="ja")
+    moine.clear_default_dictionary(lang="ja-sudachi")
+    try:
+        with pytest.raises(FileNotFoundError, match="No default 'ja' dictionary artifact"):
+            moine.load_dict(lang="ja")
+        assert moine.distance("いんさt", "印刷", lang="ja-sudachi") == 1
+    finally:
+        moine.clear_default_dictionary(lang="ja")
+        moine.clear_default_dictionary(lang="ja-sudachi")
+
+
+def test_japanese_default_cache_prefers_unidic_over_sudachi(tmp_path, monkeypatch):
+    cache_dir = tmp_path / "cache"
+    write_ja_bundle(cache_dir / "moine-sudachi-full-20260428-test", insatsu_reading="アウト")
+    write_ja_bundle(cache_dir / "moine-unidic-cwj-202512-test")
+
     monkeypatch.setenv("MOINE_CACHE_DIR", str(cache_dir))
     moine.clear_default_dictionary(lang="ja")
     try:
@@ -139,6 +223,11 @@ def test_default_artifact_specs_point_to_current_releases():
     assert (
         ARTIFACT_SPECS["ja"].archive_url == "https://github.com/tagucci/moine/releases/download/"
         "unidic-cwj-202512-v0.1.1/moine-unidic-cwj-202512.tar.gz"
+    )
+    assert (
+        ARTIFACT_SPECS["ja-sudachi"].archive_url
+        == "https://github.com/tagucci/moine/releases/download/"
+        "moine-sudachi-full-20260428-v0.2.0/moine-sudachi-full-20260428.tar.gz"
     )
     assert (
         ARTIFACT_SPECS["zh"].archive_url == "https://github.com/tagucci/moine/releases/download/"

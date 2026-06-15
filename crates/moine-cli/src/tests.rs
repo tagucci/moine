@@ -78,6 +78,10 @@ fn parses_download_options() {
 
     assert_eq!(options.spec.language, ArtifactLanguage::Chinese);
     assert_eq!(options.spec.artifact_name, "moine-cedict-20260520");
+    assert!(options
+        .spec
+        .archive_url
+        .contains("moine-cedict-20260520-v0.1.1"));
     assert_eq!(options.url, Some("/tmp/moine-cedict.tar.gz".to_string()));
     assert_eq!(options.checksum_url, Some("/tmp/SHA256SUMS".to_string()));
     assert_eq!(options.cache_dir, Some("/tmp/moine-cache".to_string()));
@@ -85,14 +89,51 @@ fn parses_download_options() {
 }
 
 #[test]
+fn parses_sudachi_download_options() {
+    let options = DownloadCliOptions::parse(vec!["ja-sudachi".to_string()]).unwrap();
+
+    assert_eq!(options.spec.language, ArtifactLanguage::JapaneseSudachi);
+    assert_eq!(options.spec.artifact_name, "moine-sudachi-full-20260428");
+    assert_eq!(
+        options.spec.archive_name,
+        "moine-sudachi-full-20260428.tar.gz"
+    );
+    assert!(options
+        .spec
+        .archive_url
+        .contains("moine-sudachi-full-20260428-v0.2.0"));
+}
+
+#[test]
+fn parses_unidic_download_options() {
+    let options = DownloadCliOptions::parse(vec!["ja".to_string()]).unwrap();
+
+    assert_eq!(options.spec.language, ArtifactLanguage::Japanese);
+    assert_eq!(options.spec.artifact_name, "moine-unidic-cwj-202512");
+    assert!(options
+        .spec
+        .archive_url
+        .contains("unidic-cwj-202512-v0.1.1"));
+
+    let explicit = DownloadCliOptions::parse(vec!["ja-unidic".to_string()]).unwrap();
+    assert_eq!(explicit.spec.language, ArtifactLanguage::Japanese);
+    assert_eq!(explicit.spec.artifact_name, "moine-unidic-cwj-202512");
+}
+
+#[test]
 fn default_download_specs_point_to_current_artifact_releases() {
     let ja = download_spec_for_language(ArtifactLanguage::Japanese);
+    let sudachi = download_spec_for_language(ArtifactLanguage::JapaneseSudachi);
     let zh = download_spec_for_language(ArtifactLanguage::Chinese);
 
     assert_eq!(ja.artifact_name, "moine-unidic-cwj-202512");
     assert!(ja
         .archive_url
         .contains("unidic-cwj-202512-v0.1.1/moine-unidic-cwj-202512.tar.gz"));
+    assert_eq!(sudachi.artifact_name, "moine-sudachi-full-20260428");
+    assert!(sudachi
+        .archive_url
+        .contains("moine-sudachi-full-20260428-v0.2.0/moine-sudachi-full-20260428.tar.gz"));
     assert_eq!(zh.artifact_name, "moine-cedict-20260520");
     assert!(zh
         .archive_url
@@ -118,6 +159,28 @@ fn parses_cache_lookup_options() {
     assert_eq!(
         where_options.cache_dir,
         Some("/tmp/moine-cache".to_string())
+    );
+
+    let sudachi_where_options = WhereCliOptions::parse(vec![
+        "sudachi".to_string(),
+        "--cache-dir".to_string(),
+        "/tmp/moine-cache".to_string(),
+    ])
+    .unwrap();
+    assert_eq!(
+        sudachi_where_options.language,
+        Some(ArtifactLanguage::JapaneseSudachi)
+    );
+
+    let unidic_where_options = WhereCliOptions::parse(vec![
+        "unidic".to_string(),
+        "--cache-dir".to_string(),
+        "/tmp/moine-cache".to_string(),
+    ])
+    .unwrap();
+    assert_eq!(
+        unidic_where_options.language,
+        Some(ArtifactLanguage::Japanese)
     );
 }
 
@@ -440,6 +503,51 @@ fn compare_allows_overrides_with_one_dictionary_source() {
 }
 
 #[test]
+fn parses_compare_with_sudachi_lex_csv() {
+    let options = CompareOptions::parse(vec![
+        "--left".to_string(),
+        "きめつのやいば".to_string(),
+        "--right".to_string(),
+        "鬼滅の刃".to_string(),
+        "--sudachi-lex-csv".to_string(),
+        "sudachi/full_lex.csv".to_string(),
+        "--max-readings-per-surface".to_string(),
+        "16".to_string(),
+    ])
+    .unwrap();
+
+    assert_eq!(options.lex_csv, None);
+    assert_eq!(
+        options.sudachi_lex_csv,
+        Some("sudachi/full_lex.csv".to_string())
+    );
+    assert_eq!(
+        options.sudachi_index_options.max_readings_per_surface,
+        Some(16)
+    );
+    assert!(options.sudachi_index_options.include_normalized_surfaces);
+    assert!(!options.sudachi_index_options.exclude_unsupported_readings);
+}
+
+#[test]
+fn parses_compare_with_sudachi_specific_index_options() {
+    let options = CompareOptions::parse(vec![
+        "--left".to_string(),
+        "きめつのやいば".to_string(),
+        "--right".to_string(),
+        "鬼滅の刃".to_string(),
+        "--sudachi-lex-csv".to_string(),
+        "sudachi/full_lex.csv".to_string(),
+        "--no-normalized-surfaces".to_string(),
+        "--exclude-unsupported-readings".to_string(),
+    ])
+    .unwrap();
+
+    assert!(!options.sudachi_index_options.include_normalized_surfaces);
+    assert!(options.sudachi_index_options.exclude_unsupported_readings);
+}
+
+#[test]
 fn compare_rejects_multiple_dictionary_sources() {
     let err = Cli::parse_from_args([
         "compare",
@@ -455,6 +563,168 @@ fn compare_rejects_multiple_dictionary_sources() {
     .unwrap_err();
 
     assert_eq!(err.kind(), ErrorKind::ArgumentConflict);
+}
+
+#[test]
+fn compare_rejects_unidic_and_sudachi_sources_together() {
+    let err = Cli::parse_from_args([
+        "compare",
+        "--left",
+        "きめつのやいば",
+        "--right",
+        "鬼滅の刃",
+        "--lex-csv",
+        "unidic-cwj-202512_full/lex.csv",
+        "--sudachi-lex-csv",
+        "sudachi/full_lex.csv",
+    ])
+    .unwrap_err();
+
+    assert_eq!(err.kind(), ErrorKind::ArgumentConflict);
+}
+
+#[test]
+fn compare_rejects_unidic_field_for_sudachi_source() {
+    let err = CompareOptions::parse(vec![
+        "--left".to_string(),
+        "きめつのやいば".to_string(),
+        "--right".to_string(),
+        "鬼滅の刃".to_string(),
+        "--sudachi-lex-csv".to_string(),
+        "sudachi/full_lex.csv".to_string(),
+        "--field".to_string(),
+        "pron".to_string(),
+    ])
+    .unwrap_err();
+
+    assert!(err.to_string().contains("--field"));
+    assert!(err.to_string().contains("--sudachi-lex-csv"));
+}
+
+#[test]
+fn compare_rejects_sudachi_options_for_unidic_source() {
+    let err = CompareOptions::parse(vec![
+        "--left".to_string(),
+        "きめつのやいば".to_string(),
+        "--right".to_string(),
+        "鬼滅の刃".to_string(),
+        "--lex-csv".to_string(),
+        "unidic-cwj-202512_full/lex.csv".to_string(),
+        "--no-normalized-surfaces".to_string(),
+    ])
+    .unwrap_err();
+
+    assert!(err.to_string().contains("--no-normalized-surfaces"));
+    assert!(err.to_string().contains("--lex-csv"));
+}
+
+#[test]
+fn compare_rejects_csv_index_options_for_artifact_source() {
+    let err = CompareOptions::parse(vec![
+        "--left".to_string(),
+        "きめつのやいば".to_string(),
+        "--right".to_string(),
+        "鬼滅の刃".to_string(),
+        "--artifact-metadata".to_string(),
+        "dist/moine-unidic-cwj-202512/metadata.yaml".to_string(),
+        "--max-readings-per-surface".to_string(),
+        "16".to_string(),
+    ])
+    .unwrap_err();
+
+    assert!(err.to_string().contains("--max-readings-per-surface"));
+    assert!(err.to_string().contains("--artifact-metadata"));
+}
+
+#[test]
+fn parses_sudachi_csv_readings_options() {
+    let options = SudachiCsvReadingsOptions::parse(vec![
+        "--surface".to_string(),
+        "鬼滅の刃".to_string(),
+        "--lex-csv".to_string(),
+        "sudachi/full_lex.csv".to_string(),
+        "--exclude-unsupported-readings".to_string(),
+    ])
+    .unwrap();
+
+    assert_eq!(options.surface, "鬼滅の刃");
+    assert_eq!(options.lex_csv, "sudachi/full_lex.csv");
+    assert!(options.index_options.exclude_unsupported_readings);
+}
+
+#[test]
+fn parses_sudachi_artifact_bundle_options() {
+    let options = SudachiArtifactBundleCliOptions::parse(vec![
+        "--lex-csv".to_string(),
+        "sudachi/full_lex.csv".to_string(),
+        "--source-version".to_string(),
+        "20260428".to_string(),
+        "--output-dir".to_string(),
+        "dist/moine-sudachi-full-20260428".to_string(),
+        "--artifact-name".to_string(),
+        "moine-sudachi-full-20260428".to_string(),
+        "--license-file".to_string(),
+        "SudachiDict/LICENSE-2.0.txt".to_string(),
+        "--legal-file".to_string(),
+        "SudachiDict/LEGAL".to_string(),
+        "--max-readings-per-surface".to_string(),
+        "16".to_string(),
+        "--exclude-unsupported-readings".to_string(),
+        "--max-readings-per-segment".to_string(),
+        "8".to_string(),
+        "--longest-only".to_string(),
+    ])
+    .unwrap();
+
+    assert_eq!(options.lex_csv, "sudachi/full_lex.csv");
+    assert_eq!(options.source_version, "20260428");
+    assert_eq!(options.output_dir, "dist/moine-sudachi-full-20260428");
+    assert_eq!(options.artifact_name, "moine-sudachi-full-20260428");
+    assert_eq!(options.payload_format, ArtifactPayloadFormat::Indexed);
+    assert_eq!(options.source_name, "SudachiDict");
+    assert_eq!(
+        options.license_file,
+        "SudachiDict/LICENSE-2.0.txt".to_string()
+    );
+    assert_eq!(options.legal_file, "SudachiDict/LEGAL".to_string());
+    assert_eq!(options.index_options.max_readings_per_surface, Some(16));
+    assert!(options.index_options.exclude_unsupported_readings);
+    assert_eq!(options.dictionary_options.max_readings_per_segment, Some(8));
+    assert!(options.dictionary_options.longest_match_only);
+}
+
+#[test]
+fn sudachi_artifact_bundle_requires_license_and_legal_files() {
+    let err = Cli::parse_from_args([
+        "sudachi-artifact-bundle",
+        "--lex-csv",
+        "sudachi/full_lex.csv",
+        "--source-version",
+        "20260428",
+        "--output-dir",
+        "dist/moine-sudachi-full-20260428",
+    ])
+    .unwrap_err();
+
+    assert_eq!(err.kind(), ErrorKind::MissingRequiredArgument);
+}
+
+#[test]
+fn sudachi_artifact_bundle_requires_legal_file() {
+    let err = Cli::parse_from_args([
+        "sudachi-artifact-bundle",
+        "--lex-csv",
+        "sudachi/full_lex.csv",
+        "--source-version",
+        "20260428",
+        "--output-dir",
+        "dist/moine-sudachi-full-20260428",
+        "--license-file",
+        "SudachiDict/LICENSE-2.0.txt",
+    ])
+    .unwrap_err();
+
+    assert_eq!(err.kind(), ErrorKind::MissingRequiredArgument);
 }
 
 #[test]

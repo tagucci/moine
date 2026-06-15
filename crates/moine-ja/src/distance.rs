@@ -8,7 +8,8 @@ use moine_core::{
 use crate::overrides::OverrideDictionary;
 use crate::romaji::{romaji_paths, JaLatticeError};
 use crate::unidic::{
-    romaji_paths_from_reading_paths, DictionaryReadingOptions, UnidicReadingIndex,
+    romaji_paths_from_reading_paths, DictionaryReadingOptions, DictionaryReadingPath,
+    UnidicReadingIndex,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -41,7 +42,7 @@ pub fn compare_with_overrides(
     Ok(compare_lattices(left, right, &left_lattice, &right_lattice))
 }
 
-/// Compares two strings using direct handling and a UniDic reading index.
+/// Compares two strings using direct handling and a Japanese dictionary index.
 pub fn compare_with_unidic_index(
     left: &str,
     right: &str,
@@ -53,7 +54,7 @@ pub fn compare_with_unidic_index(
     Ok(compare_lattices(left, right, &left_lattice, &right_lattice))
 }
 
-/// Computes the best normalized similarity across UniDic-backed readings.
+/// Computes the best normalized similarity across dictionary-backed readings.
 pub fn normalized_similarity_with_unidic_index(
     left: &str,
     right: &str,
@@ -95,16 +96,16 @@ pub fn unidic_or_direct_romaji_paths(
         .paths;
     let has_dictionary_paths = !dictionary_paths.is_empty();
     if has_dictionary_paths {
-        paths.extend(romaji_paths_from_reading_paths(&dictionary_paths)?);
+        extend_supported_dictionary_paths(&mut paths, &dictionary_paths)?;
     }
 
-    if !has_dictionary_paths {
+    if !has_dictionary_paths || paths.is_empty() {
         let hybrid_paths = index
             .try_hybrid_reading_paths_with_stats(input, options)
             .map_err(|err| JaLatticeError::ArtifactPayload(err.to_string()))?
             .paths;
         if !hybrid_paths.is_empty() {
-            paths.extend(romaji_paths_from_reading_paths(&hybrid_paths)?);
+            extend_supported_dictionary_paths(&mut paths, &hybrid_paths)?;
         }
     }
 
@@ -117,6 +118,27 @@ pub fn unidic_or_direct_romaji_paths(
 
 fn contains_ascii_alphanumeric(input: &str) -> bool {
     input.chars().any(|ch| ch.is_ascii_alphanumeric())
+}
+
+fn extend_supported_dictionary_paths(
+    paths: &mut BTreeSet<String>,
+    reading_paths: &[DictionaryReadingPath],
+) -> Result<(), JaLatticeError> {
+    for path in reading_paths {
+        match romaji_paths_from_reading_paths(std::slice::from_ref(path)) {
+            Ok(romaji_paths) => paths.extend(romaji_paths),
+            Err(err) if is_unsupported_dictionary_reading(&err) => continue,
+            Err(err) => return Err(err),
+        }
+    }
+    Ok(())
+}
+
+fn is_unsupported_dictionary_reading(err: &JaLatticeError) -> bool {
+    matches!(
+        err,
+        JaLatticeError::UnsupportedChar { .. } | JaLatticeError::MissingVariant { .. }
+    )
 }
 
 fn lattice_from_romaji_paths(paths: Vec<String>) -> Result<Lattice, JaLatticeError> {
