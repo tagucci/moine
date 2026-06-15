@@ -512,7 +512,9 @@ the metadata license references under a root directory named after
 
 Dictionary tags use an artifact-specific form such as
 `unidic-cwj-202512-v0.1.1`. That keeps generated dictionary releases separate
-from `moine` library tags.
+from `moine` library tags. Older artifact tags may remain published as
+compatibility anchors for previously released packages, but new downloader
+defaults should point at the current documented artifact tags.
 
 Users should download, extract, and pass the artifact explicitly:
 
