@@ -16,7 +16,7 @@ from ._moine import (
 )
 from .ja import Dictionary
 
-Language = Literal["ja", "zh"]
+Language = Literal["ja", "ja-unidic", "ja-sudachi", "zh"]
 Metric = Literal[
     "distance",
     "damerau_distance",
@@ -31,12 +31,17 @@ _DEFAULT_DICTIONARIES: dict[str, _Dictionary] = {}
 _DEFAULT_DICTIONARIES_LOCK = RLock()
 _LANGUAGE_ENV_VARS = {
     "ja": "MOINE_JA_DICTIONARY",
+    "ja-unidic": "MOINE_JA_DICTIONARY",
+    "ja-sudachi": "MOINE_JA_DICTIONARY",
     "zh": "MOINE_ZH_DICTIONARY",
 }
 _LANGUAGE_DEFAULT_PREFIXES = {
     "ja": ("moine-unidic",),
+    "ja-unidic": ("moine-unidic",),
+    "ja-sudachi": ("moine-sudachi",),
     "zh": ("moine-cedict",),
 }
+_JAPANESE_LANGS = frozenset({"ja", "ja-unidic", "ja-sudachi"})
 try:
     __version__ = _metadata_version("moine")
 except PackageNotFoundError:
@@ -71,7 +76,7 @@ def load_dict(
             f"pass path=..., set {env_var}, "
             "or add a bundle to MOINE_DICTIONARIES_PATH."
         )
-    if lang == "ja":
+    if lang in _JAPANESE_LANGS:
         return JapaneseDictionary.load_bundle(os.fspath(artifact_path))
     if lang == "zh":
         return ChineseDictionary.load_bundle(os.fspath(artifact_path))
@@ -190,7 +195,8 @@ def clear_default_dictionary(*, lang: Language) -> None:
 
     lang = _normalize_lang(lang)
     with _DEFAULT_DICTIONARIES_LOCK:
-        _DEFAULT_DICTIONARIES.pop(lang, None)
+        for key in _default_dictionary_cache_keys(lang):
+            _DEFAULT_DICTIONARIES.pop(key, None)
 
 
 def get_default_dictionary(*, lang: Language) -> _Dictionary | None:
@@ -641,14 +647,22 @@ def _resolve_dictionary(
 
 
 def _normalize_lang(lang: str) -> Language:
+    if not isinstance(lang, str):
+        raise TypeError("lang must be a str")
     if lang == "ja":
         return "ja"
+    if lang == "ja-unidic":
+        return "ja-unidic"
+    if lang == "ja-sudachi":
+        return "ja-sudachi"
     if lang == "zh":
         return "zh"
-    raise ValueError("lang must be 'ja' or 'zh'")
+    raise ValueError("lang must be 'ja', 'ja-unidic', 'ja-sudachi', or 'zh'")
 
 
 def _normalize_metric(metric: str) -> Metric:
+    if not isinstance(metric, str):
+        raise TypeError("metric must be a str")
     if metric == "distance":
         return "distance"
     if metric == "damerau_distance":
@@ -666,6 +680,8 @@ def _normalize_metric(metric: str) -> Metric:
 
 
 def _normalize_partial_metric(metric: str) -> PartialMetric:
+    if not isinstance(metric, str):
+        raise TypeError("metric must be a str")
     if metric == "distance":
         return "distance"
     if metric == "ratio":
@@ -743,8 +759,8 @@ def _normalized_score_cutoff(score_cutoff: int | float | None) -> float | None:
 
 
 def _validate_dictionary(lang: Language, dictionary: _Dictionary) -> None:
-    if lang == "ja" and not isinstance(dictionary, JapaneseDictionary):
-        raise TypeError("dictionary must be JapaneseDictionary for lang='ja'")
+    if lang in _JAPANESE_LANGS and not isinstance(dictionary, JapaneseDictionary):
+        raise TypeError("dictionary must be JapaneseDictionary for Japanese lang")
     if lang == "zh" and not isinstance(dictionary, ChineseDictionary):
         raise TypeError("dictionary must be ChineseDictionary for lang='zh'")
 
@@ -755,6 +771,12 @@ def _dictionary_lang(dictionary: _Dictionary) -> Language:
     if isinstance(dictionary, ChineseDictionary):
         return "zh"
     raise TypeError("dictionary must be JapaneseDictionary or ChineseDictionary")
+
+
+def _default_dictionary_cache_keys(lang: Language) -> tuple[Language, ...]:
+    if lang in {"ja", "ja-unidic"}:
+        return ("ja", "ja-unidic")
+    return (lang,)
 
 
 def _find_default_dictionary_path(lang: Language) -> Path | None:
@@ -789,13 +811,14 @@ def _metadata_path(path: Path) -> Path | None:
 def _find_child_bundle(root: Path, lang: Language) -> Path | None:
     if not root.is_dir():
         return None
-    prefixes = _LANGUAGE_DEFAULT_PREFIXES[lang]
-    for child in sorted(root.iterdir()):
-        if not child.is_dir() or not child.name.startswith(prefixes):
-            continue
-        metadata = _metadata_path(child)
-        if metadata is not None:
-            return metadata
+    children = sorted(child for child in root.iterdir() if child.is_dir())
+    for prefix in _LANGUAGE_DEFAULT_PREFIXES[lang]:
+        for child in children:
+            if not child.name.startswith(prefix):
+                continue
+            metadata = _metadata_path(child)
+            if metadata is not None:
+                return metadata
     return None
 
 

@@ -6,7 +6,7 @@ from ._moine import ChineseDictionary as ChineseDictionary
 from ._moine import JapaneseDictionary as JapaneseDictionary
 from .ja import Dictionary as Dictionary
 
-Language = Literal["ja", "zh"]
+Language = Literal["ja", "ja-unidic", "ja-sudachi", "zh"]
 Metric = Literal[
     "distance",
     "damerau_distance",
