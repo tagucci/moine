@@ -6,9 +6,9 @@ use std::time::{Duration, Instant};
 
 use moine_ja::{
     artifact_file_digest_path, compare_with_unidic_index, DictionaryReadingOptions,
-    UnidicArtifactLicense, UnidicArtifactMetadata, UnidicArtifactMetadataOptions,
-    UnidicReadingIndex, ARTIFACT_PAYLOAD_CHECKSUM_ALGORITHM,
-    ARTIFACT_PAYLOAD_FILE_DIGEST_ALGORITHM,
+    UnidicArtifactLicense, UnidicArtifactLicenseReference, UnidicArtifactMetadata,
+    UnidicArtifactMetadataOptions, UnidicIndexOptions, UnidicReadingIndex,
+    ARTIFACT_PAYLOAD_CHECKSUM_ALGORITHM, ARTIFACT_PAYLOAD_FILE_DIGEST_ALGORITHM,
 };
 
 use crate::archive::{
@@ -17,13 +17,13 @@ use crate::archive::{
 };
 use crate::args::{
     default_unidic_license_dir, default_unidic_payload_file_name, max_readings_per_segment_label,
-    ArtifactPayloadFormat, CliError, UnidicArtifactArchiveCliOptions,
-    UnidicArtifactBinaryInspectCliOptions, UnidicArtifactBinaryPayloadCliOptions,
-    UnidicArtifactBundleCliOptions, UnidicArtifactInspectCliOptions,
-    UnidicArtifactMetadataCliOptions, UnidicArtifactPayloadCliOptions,
-    UnidicArtifactReleaseChecksumsCliOptions, UnidicArtifactRuntimeMeasureCliOptions,
-    UnidicArtifactVerifyCliOptions, BINARY_PAYLOAD_FORMAT, INDEXED_PAYLOAD_FORMAT,
-    YAML_PAYLOAD_FORMAT,
+    ArtifactPayloadFormat, CliError, SudachiArtifactBundleCliOptions,
+    UnidicArtifactArchiveCliOptions, UnidicArtifactBinaryInspectCliOptions,
+    UnidicArtifactBinaryPayloadCliOptions, UnidicArtifactBundleCliOptions,
+    UnidicArtifactInspectCliOptions, UnidicArtifactMetadataCliOptions,
+    UnidicArtifactPayloadCliOptions, UnidicArtifactReleaseChecksumsCliOptions,
+    UnidicArtifactRuntimeMeasureCliOptions, UnidicArtifactVerifyCliOptions, BINARY_PAYLOAD_FORMAT,
+    INDEXED_PAYLOAD_FORMAT, YAML_PAYLOAD_FORMAT,
 };
 
 pub(crate) fn run_unidic_artifact_archive(
@@ -120,6 +120,71 @@ pub(crate) fn run_unidic_artifact_bundle(
         .unwrap_or_else(|| default_unidic_license_dir(&options.lex_csv));
     copy_unidic_license_file(&license_dir, &license_output_dir, "BSD")?;
     copy_unidic_license_file(&license_dir, &license_output_dir, "COPYING")?;
+
+    println!("bundle: {}", output_dir.display());
+    println!("metadata: {}", metadata_path.display());
+    println!("payload: {}", payload_path.display());
+    println!("payload_format: {}", options.payload_format.as_str());
+    println!("entries: {}", index.len());
+    println!("file_digest_algorithm: {ARTIFACT_PAYLOAD_FILE_DIGEST_ALGORITHM}");
+    println!("file_digest: {file_digest}");
+    println!("checksum: {}", index.artifact_payload_checksum());
+
+    Ok(())
+}
+
+pub(crate) fn run_sudachi_artifact_bundle(
+    options: SudachiArtifactBundleCliOptions,
+) -> Result<(), Box<dyn Error>> {
+    let index = UnidicReadingIndex::from_sudachi_lex_csv_path_with_options(
+        &options.lex_csv,
+        options.index_options,
+    )?;
+    let output_dir = PathBuf::from(&options.output_dir);
+    let payload_file_name =
+        default_unidic_payload_file_name(&options.artifact_name, options.payload_format);
+    let payload_path = output_dir.join(&payload_file_name);
+    let metadata_path = output_dir.join("metadata.yaml");
+
+    write_artifact_payload_file(&index, options.payload_format, &payload_path)?;
+    let file_digest = artifact_file_digest_path(&payload_path)?;
+
+    let license = sudachi_artifact_license();
+    let mut metadata = index.artifact_metadata_with_build(
+        UnidicArtifactMetadataOptions {
+            artifact_name: options.artifact_name,
+            generator: "moine-cli".to_string(),
+            payload_file_name,
+            payload_format: options.payload_format.as_str().to_string(),
+            source_name: options.source_name,
+            source_version: options.source_version,
+            source_lex_csv: options.lex_csv.clone(),
+            index_options: UnidicIndexOptions::default(),
+            query_defaults: options.dictionary_options,
+            license,
+        },
+        moine_ja::UnidicArtifactBuild {
+            reading_field: "sudachi-reading".to_string(),
+            max_readings_per_surface: options.index_options.max_readings_per_surface,
+            exclude_ascii_surfaces: options.index_options.exclude_ascii_surfaces,
+            exclude_symbol_pos: options.index_options.exclude_symbol_pos,
+            include_normalized_surfaces: options.index_options.include_normalized_surfaces,
+            exclude_unsupported_readings: options.index_options.exclude_unsupported_readings,
+            entries: index.len(),
+        },
+    );
+    metadata.payload.file_digest_algorithm =
+        Some(ARTIFACT_PAYLOAD_FILE_DIGEST_ALGORITHM.to_string());
+    metadata.payload.file_digest = Some(file_digest.clone());
+    fs::write(&metadata_path, serde_yaml::to_string(&metadata)?)?;
+
+    let license_output_dir = output_dir.join("license");
+    fs::create_dir_all(&license_output_dir)?;
+    fs::copy(
+        &options.license_file,
+        license_output_dir.join("LICENSE-2.0.txt"),
+    )?;
+    fs::copy(&options.legal_file, license_output_dir.join("LEGAL"))?;
 
     println!("bundle: {}", output_dir.display());
     println!("metadata: {}", metadata_path.display());
@@ -471,6 +536,22 @@ pub(crate) fn copy_unidic_license_file(
         output_license_dir.join(file_name),
     )?;
     Ok(())
+}
+
+pub(crate) fn sudachi_artifact_license() -> UnidicArtifactLicense {
+    UnidicArtifactLicense {
+        selected_license: "Apache-2.0".to_string(),
+        references: vec![
+            UnidicArtifactLicenseReference {
+                label: "LICENSE-2.0.txt".to_string(),
+                path: "license/LICENSE-2.0.txt".to_string(),
+            },
+            UnidicArtifactLicenseReference {
+                label: "LEGAL".to_string(),
+                path: "license/LEGAL".to_string(),
+            },
+        ],
+    }
 }
 
 pub(crate) fn write_artifact_payload_file(

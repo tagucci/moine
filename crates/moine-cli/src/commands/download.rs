@@ -235,7 +235,7 @@ pub(crate) fn verify_downloaded_bundle(
         CliError::ArtifactVerificationFailed("metadata path is not UTF-8".to_string())
     })?;
     match language {
-        ArtifactLanguage::Japanese => {
+        ArtifactLanguage::Japanese | ArtifactLanguage::JapaneseSudachi => {
             verify_unidic_artifact_bundle(metadata, None, false)?;
         }
         ArtifactLanguage::Chinese => {

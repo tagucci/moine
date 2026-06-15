@@ -21,8 +21,9 @@ use crate::archive::{ensure_output_parent, write_output_file};
 use crate::args::{
     max_readings_per_segment_label, max_readings_per_surface_label, unidic_reading_field_name,
     ArtifactPayloadFormat, CedictReadingsOptions, CedictSequencesOptions, ChineseCompareOptions,
-    CliError, CompareOptions, RomajiLatticeOutputFormat, UnidicCsvReadingsOptions,
-    UnidicCsvSequencesOptions, UnidicReadingsOptions,
+    CliError, CompareOptions, RomajiLatticeOutputFormat, SudachiCsvReadingsOptions,
+    SudachiCsvSequencesOptions, UnidicCsvReadingsOptions, UnidicCsvSequencesOptions,
+    UnidicReadingsOptions,
 };
 use crate::commands::unidic_artifact::{
     dictionary_options_from_metadata, load_artifact_payload_by_format,
@@ -175,6 +176,53 @@ pub(crate) fn run_unidic_csv_readings(
     Ok(())
 }
 
+pub(crate) fn run_sudachi_csv_sequences(
+    options: SudachiCsvSequencesOptions,
+) -> Result<(), Box<dyn Error>> {
+    let index = UnidicReadingIndex::from_sudachi_lex_csv_path_with_options(
+        &options.lex_csv,
+        options.index_options,
+    )?;
+    let expansion = index.reading_paths_with_stats(&options.text, options.dictionary_options);
+
+    println!("text: {}", options.text);
+    println!("source: sudachi_lex_csv");
+    println!(
+        "max_readings_segment: {}",
+        max_readings_per_segment_label(options.dictionary_options.max_readings_per_segment)
+    );
+    println!("entries: {}", index.len());
+    print_reading_stats("expansion", &expansion.stats);
+    println!("paths:");
+    for path in expansion.paths {
+        println!("  - reading: {}", path.joined_reading);
+        println!("    segments: {}", format_reading_segments(&path.segments));
+    }
+
+    Ok(())
+}
+
+pub(crate) fn run_sudachi_csv_readings(
+    options: SudachiCsvReadingsOptions,
+) -> Result<(), Box<dyn Error>> {
+    let index = UnidicReadingIndex::from_sudachi_lex_csv_path_with_options(
+        &options.lex_csv,
+        options.index_options,
+    )?;
+
+    println!("surface: {}", options.surface);
+    println!("source: sudachi_lex_csv");
+    println!("entries: {}", index.len());
+    println!("readings:");
+    if let Some(readings) = index.readings(&options.surface) {
+        for reading in readings.as_ref() {
+            println!("  - {reading}");
+        }
+    }
+
+    Ok(())
+}
+
 pub(crate) fn run_unidic_readings(options: UnidicReadingsOptions) -> Result<(), Box<dyn Error>> {
     let mut child = Command::new("mecab")
         .arg("-d")
@@ -248,6 +296,7 @@ pub(crate) fn run_compare(options: CompareOptions) -> Result<(), Box<dyn Error>>
     };
 
     let dict_result = if options.lex_csv.is_some()
+        || options.sudachi_lex_csv.is_some()
         || options.artifact_payload.is_some()
         || options.artifact_metadata.is_some()
     {
@@ -260,16 +309,30 @@ pub(crate) fn run_compare(options: CompareOptions) -> Result<(), Box<dyn Error>>
                 },
                 options.dictionary_options,
             )
+        } else if let Some(lex_csv) = &options.sudachi_lex_csv {
+            (
+                UnidicReadingIndex::from_sudachi_lex_csv_path_with_options(
+                    lex_csv,
+                    options.sudachi_index_options,
+                )?,
+                DictComparisonSource::SudachiLexCsv {
+                    path: lex_csv.clone(),
+                    index_options: options.sudachi_index_options,
+                },
+                options.dictionary_options,
+            )
         } else if let Some(metadata_path) = &options.artifact_metadata {
             let loaded = load_unidic_artifact_bundle_for_runtime(metadata_path, None)?;
             let payload_path = loaded.payload_path.display().to_string();
             let payload_format = loaded.metadata.payload.format.clone();
+            let source_name = loaded.metadata.source.name.clone();
             let dictionary_options = options
                 .dictionary_option_overrides
                 .apply_to(dictionary_options_from_metadata(&loaded.metadata));
             (
                 loaded.index,
                 DictComparisonSource::ArtifactMetadata {
+                    source_name,
                     metadata_path: metadata_path.clone(),
                     payload_path,
                     payload_format,
@@ -355,7 +418,7 @@ pub(crate) fn run_compare(options: CompareOptions) -> Result<(), Box<dyn Error>>
             max_readings_per_segment_label(result.dictionary_options.max_readings_per_segment)
         );
         println!(
-            "unidic_longest_only: {}",
+            "dictionary_longest_only: {}",
             result.dictionary_options.longest_match_only
         );
         print_query_reading_stats("left_expansion", &result.left_expansion);
@@ -473,21 +536,47 @@ pub(crate) fn print_dict_comparison_source(source: &DictComparisonSource) {
             );
             println!("exclude_symbol_pos: {}", index_options.exclude_symbol_pos);
         }
+        DictComparisonSource::SudachiLexCsv {
+            path,
+            index_options,
+        } => {
+            println!("sudachi_source:     lex_csv");
+            println!("sudachi_lex_csv:    {path}");
+            println!(
+                "max_readings_surface: {}",
+                max_readings_per_surface_label(index_options.max_readings_per_surface)
+            );
+            println!(
+                "exclude_ascii:      {}",
+                index_options.exclude_ascii_surfaces
+            );
+            println!("exclude_symbol_pos: {}", index_options.exclude_symbol_pos);
+            println!(
+                "normalized_surfaces: {}",
+                index_options.include_normalized_surfaces
+            );
+            println!(
+                "exclude_unsupported_readings: {}",
+                index_options.exclude_unsupported_readings
+            );
+        }
         DictComparisonSource::ArtifactPayload {
             path,
             payload_format,
         } => {
-            println!("unidic_source:      artifact_payload");
+            println!("dictionary_source: artifact_payload");
             println!("artifact_payload:   {path}");
             println!("payload_format:     {}", payload_format.as_str());
         }
         DictComparisonSource::ArtifactMetadata {
+            source_name,
             metadata_path,
             payload_path,
             payload_format,
             file_digest_verified,
         } => {
-            println!("unidic_source:      artifact_metadata");
+            println!("dictionary_source: artifact_metadata");
+            println!("source_name:        {source_name}");
             println!("artifact_metadata:  {metadata_path}");
             println!("artifact_payload:   {payload_path}");
             println!("payload_format:     {payload_format}");
@@ -898,11 +987,16 @@ pub(crate) enum DictComparisonSource {
         path: String,
         index_options: UnidicIndexOptions,
     },
+    SudachiLexCsv {
+        path: String,
+        index_options: moine_ja::SudachiIndexOptions,
+    },
     ArtifactPayload {
         path: String,
         payload_format: ArtifactPayloadFormat,
     },
     ArtifactMetadata {
+        source_name: String,
         metadata_path: String,
         payload_path: String,
         payload_format: String,
