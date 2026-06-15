@@ -1,5 +1,10 @@
 # mòine
 
+[![CI](https://github.com/tagucci/moine/actions/workflows/ci.yml/badge.svg)](https://github.com/tagucci/moine/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/moine.svg)](https://pypi.org/project/moine/)
+[![crates.io](https://img.shields.io/crates/v/moine.svg)](https://crates.io/crates/moine)
+[![docs.rs](https://img.shields.io/docsrs/moine.svg)](https://docs.rs/moine)
+
 `mòine` is a Python and Rust library for romanization-aware string comparison.
 
 It implements [Lattice Path Edit Distance (Kaji, 2023)](https://aclanthology.org/2023.emnlp-industry.24/),

@@ -122,6 +122,11 @@ these exact names:
 - `moine-cedict-20260520-v0.1.1/moine-cedict-20260520.tar.gz`
 - `moine-cedict-20260520-v0.1.1/moine-cedict-20260520.tar.zst`
 
+These dictionary release tags are artifact-specific and do not need to match
+the package version when the generated payloads are unchanged. For the package
+`v0.2.0` release, the current public downloader targets are UniDic-CWJ
+`v0.1.1`, SudachiDict-full `v0.2.0`, and CC-CEDICT `v0.1.1`.
+
 The release workflow checks these assets before publishing the Python
 distribution on tag pushes. Keep the workflow asset list, Rust downloader specs,
 Python downloader specs, and this document in sync whenever artifact names or
