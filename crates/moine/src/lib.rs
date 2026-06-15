@@ -23,7 +23,7 @@
 pub use moine_core::*;
 
 pub mod ja {
-    //! Japanese kana, romaji, override, and UniDic adapters.
+    //! Japanese kana, romaji, override, UniDic, and Sudachi adapters.
 
     use std::error::Error;
     use std::fmt;
@@ -110,18 +110,27 @@ pub mod ja {
                 Self::Io(err) => write!(f, "{err}"),
                 Self::Yaml(err) => write!(f, "{err}"),
                 Self::UnsupportedSchemaVersion { version } => {
-                    write!(f, "unsupported UniDic metadata schema version {version}")
+                    write!(
+                        f,
+                        "unsupported Japanese dictionary metadata schema version {version}"
+                    )
                 }
                 Self::UnsupportedArtifactType { artifact_type } => {
-                    write!(f, "unsupported UniDic artifact type {artifact_type:?}")
+                    write!(
+                        f,
+                        "unsupported Japanese dictionary artifact type {artifact_type:?}"
+                    )
                 }
                 Self::UnsupportedPayloadFormat { format } => {
-                    write!(f, "unsupported UniDic payload format {format:?}")
+                    write!(
+                        f,
+                        "unsupported Japanese dictionary payload format {format:?}"
+                    )
                 }
                 Self::UnsupportedChecksumAlgorithm { algorithm } => {
                     write!(
                         f,
-                        "unsupported UniDic payload checksum algorithm {algorithm:?}"
+                        "unsupported Japanese dictionary payload checksum algorithm {algorithm:?}"
                     )
                 }
                 Self::ChecksumMismatch { expected, actual } => write!(
@@ -137,7 +146,7 @@ pub mod ja {
                 }
                 Self::UnsupportedFileDigestAlgorithm { algorithm } => write!(
                     f,
-                    "unsupported UniDic payload file digest algorithm {algorithm:?}"
+                    "unsupported Japanese dictionary payload file digest algorithm {algorithm:?}"
                 ),
                 Self::FileDigestMismatch { expected, actual } => write!(
                     f,
@@ -145,13 +154,13 @@ pub mod ja {
                 ),
                 Self::IncompleteFileDigestMetadata => write!(
                     f,
-                    "UniDic payload file digest algorithm and digest must be provided together"
+                    "Japanese dictionary payload file digest algorithm and digest must be provided together"
                 ),
                 Self::UnsafeBundlePath { path } => write!(
                     f,
                     "bundle path {path:?} must be relative and stay inside the bundle"
                 ),
-                Self::Payload(err) => write!(f, "UniDic payload error: {err}"),
+                Self::Payload(err) => write!(f, "Japanese dictionary payload error: {err}"),
                 Self::Invalid(message) => write!(f, "{message}"),
             }
         }
@@ -202,7 +211,7 @@ pub mod ja {
         pub payload_path: PathBuf,
         /// Parsed bundle metadata.
         pub metadata: UnidicArtifactMetadata,
-        /// Loaded UniDic reading index.
+        /// Loaded Japanese reading index.
         pub index: UnidicReadingIndex,
         /// Query options derived from bundle metadata defaults.
         pub options: DictionaryReadingOptions,

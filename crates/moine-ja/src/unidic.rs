@@ -32,7 +32,7 @@ const INDEXED_ARTIFACT_MAGIC: &[u8; 8] = b"MOINEI01";
 const INDEXED_ARTIFACT_VERSION: u32 = 1;
 const INDEXED_ARTIFACT_HEADER_LEN: usize = 40;
 const MAX_ARTIFACT_PAYLOAD_BYTES: u64 = 512 * 1024 * 1024;
-const MAX_ARTIFACT_ENTRIES: usize = 2_000_000;
+const MAX_ARTIFACT_ENTRIES: usize = 3_000_000;
 const MAX_ARTIFACT_READINGS_PER_ENTRY: usize = 256;
 const MAX_ARTIFACT_STRING_BYTES: usize = 16 * 1024;
 /// Current canonical checksum algorithm for normalized UniDic payload content.
@@ -269,6 +269,12 @@ pub struct UnidicArtifactBuild {
     pub exclude_ascii_surfaces: bool,
     /// Whether symbol part-of-speech entries were excluded.
     pub exclude_symbol_pos: bool,
+    /// Whether source normalized-form aliases were added as lookup surfaces.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub include_normalized_surfaces: bool,
+    /// Whether readings unsupported by the romaji converter were excluded.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub exclude_unsupported_readings: bool,
     /// Number of entries in the generated payload.
     pub entries: usize,
 }
@@ -1092,7 +1098,9 @@ impl UnidicReadingIndex {
         read_binary_artifact_payload_header(&mut reader)
     }
 
-    fn from_readings_by_surface(readings_by_surface: HashMap<String, Vec<String>>) -> Self {
+    pub(crate) fn from_readings_by_surface(
+        readings_by_surface: HashMap<String, Vec<String>>,
+    ) -> Self {
         Self {
             storage: UnidicReadingStorage::Eager(readings_by_surface),
         }
@@ -1163,6 +1171,28 @@ impl UnidicReadingIndex {
         &self,
         options: UnidicArtifactMetadataOptions,
     ) -> UnidicArtifactMetadata {
+        let build = UnidicArtifactBuild {
+            reading_field: options.index_options.reading_field.as_str().to_string(),
+            max_readings_per_surface: options.index_options.max_readings_per_surface,
+            exclude_ascii_surfaces: options.index_options.exclude_ascii_surfaces,
+            exclude_symbol_pos: options.index_options.exclude_symbol_pos,
+            include_normalized_surfaces: false,
+            exclude_unsupported_readings: false,
+            entries: self.len(),
+        };
+        self.artifact_metadata_with_build(options, build)
+    }
+
+    /// Builds bundle metadata with caller-provided build provenance.
+    ///
+    /// This is used by Japanese dictionary sources that reuse the same reading
+    /// payload format but do not share UniDic's CSV field layout.
+    pub fn artifact_metadata_with_build(
+        &self,
+        options: UnidicArtifactMetadataOptions,
+        mut build: UnidicArtifactBuild,
+    ) -> UnidicArtifactMetadata {
+        build.entries = self.len();
         UnidicArtifactMetadata {
             schema_version: 1,
             artifact_type: "moine.unidic.reading-index".to_string(),
@@ -1181,13 +1211,7 @@ impl UnidicReadingIndex {
                 version: options.source_version,
                 lex_csv: options.source_lex_csv,
             },
-            build: UnidicArtifactBuild {
-                reading_field: options.index_options.reading_field.as_str().to_string(),
-                max_readings_per_surface: options.index_options.max_readings_per_surface,
-                exclude_ascii_surfaces: options.index_options.exclude_ascii_surfaces,
-                exclude_symbol_pos: options.index_options.exclude_symbol_pos,
-                entries: self.len(),
-            },
+            build,
             query_defaults: UnidicArtifactQueryDefaults {
                 max_span_chars: options.query_defaults.max_span_chars,
                 max_paths: options.query_defaults.max_paths,
@@ -1685,7 +1709,7 @@ impl UnidicReadingIndex {
     /// Builds a romaji lattice with dictionary readings and direct fallback.
     ///
     /// This is the preferred lattice builder for mixed Japanese text where
-    /// kana or ASCII spans may appear beside UniDic-backed surfaces.
+    /// kana or ASCII spans may appear beside dictionary-backed surfaces.
     pub fn hybrid_romaji_lattice(
         &self,
         text: &str,
@@ -1715,7 +1739,7 @@ fn char_boundaries(text: &str) -> Vec<usize> {
         .collect()
 }
 
-fn insert_surface_reading(
+pub(crate) fn insert_surface_reading(
     by_surface: &mut HashMap<String, BTreeSet<String>>,
     surface: &str,
     reading: &str,
@@ -1726,7 +1750,7 @@ fn insert_surface_reading(
         .insert(reading.to_string());
 }
 
-fn normalize_ascii_width(input: &str) -> Option<String> {
+pub(crate) fn normalize_ascii_width(input: &str) -> Option<String> {
     let mut normalized = String::with_capacity(input.len());
     let mut changed = false;
 
@@ -1749,14 +1773,14 @@ fn normalize_ascii_width_char(ch: char) -> char {
     }
 }
 
-fn lex_csv_reader(reader: impl Read) -> csv::Reader<impl Read> {
+pub(crate) fn lex_csv_reader(reader: impl Read) -> csv::Reader<impl Read> {
     csv::ReaderBuilder::new()
         .has_headers(false)
         .flexible(true)
         .from_reader(reader)
 }
 
-fn field(record: &csv::StringRecord, column: usize) -> Result<&str, UnidicCsvError> {
+pub(crate) fn field(record: &csv::StringRecord, column: usize) -> Result<&str, UnidicCsvError> {
     record
         .get(column)
         .ok_or_else(|| UnidicCsvError::MissingColumn {
@@ -1769,8 +1793,12 @@ fn field(record: &csv::StringRecord, column: usize) -> Result<&str, UnidicCsvErr
         })
 }
 
-fn is_symbol_pos(pos1: &str) -> bool {
+pub(crate) fn is_symbol_pos(pos1: &str) -> bool {
     pos1.contains("記号")
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 fn limited_surface_readings(readings: &[String], options: DictionaryReadingOptions) -> &[String] {
