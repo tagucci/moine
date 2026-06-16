@@ -1,8 +1,8 @@
 use std::collections::BTreeSet;
 
 use moine_core::{
-    damerau_distance, damerau_levenshtein_str, distance, levenshtein_str,
-    normalized_similarity_str, Lattice, Symbol,
+    levenshtein_str, normalized_similarity_str, try_damerau_distance, try_damerau_levenshtein_str,
+    try_distance, Lattice, Symbol,
 };
 
 use crate::overrides::OverrideDictionary;
@@ -39,7 +39,7 @@ pub fn compare_with_overrides(
 ) -> Result<JapaneseDistance, JaLatticeError> {
     let left_lattice = overrides.romaji_lattice(left)?;
     let right_lattice = overrides.romaji_lattice(right)?;
-    Ok(compare_lattices(left, right, &left_lattice, &right_lattice))
+    compare_lattices(left, right, &left_lattice, &right_lattice)
 }
 
 /// Compares two strings using direct handling and a Japanese dictionary index.
@@ -51,7 +51,7 @@ pub fn compare_with_unidic_index(
 ) -> Result<JapaneseDistance, JaLatticeError> {
     let left_lattice = unidic_or_direct_lattice(left, index, options)?;
     let right_lattice = unidic_or_direct_lattice(right, index, options)?;
-    Ok(compare_lattices(left, right, &left_lattice, &right_lattice))
+    compare_lattices(left, right, &left_lattice, &right_lattice)
 }
 
 /// Computes the best normalized similarity across dictionary-backed readings.
@@ -164,24 +164,25 @@ fn compare_lattices(
     right: &str,
     left_lattice: &Lattice,
     right_lattice: &Lattice,
-) -> JapaneseDistance {
-    let lattice = distance(left_lattice, right_lattice);
-    let lattice_damerau = damerau_distance(left_lattice, right_lattice);
+) -> Result<JapaneseDistance, JaLatticeError> {
+    let lattice = try_distance(left_lattice, right_lattice)?;
+    let lattice_damerau = try_damerau_distance(left_lattice, right_lattice)?;
     let surface_levenshtein = levenshtein_str(left, right);
-    let surface_damerau = damerau_levenshtein_str(left, right);
+    let surface_damerau = try_damerau_levenshtein_str(left, right)?;
 
-    JapaneseDistance {
+    Ok(JapaneseDistance {
         surface_levenshtein,
         surface_damerau,
         lattice,
         lattice_damerau,
         combined: surface_damerau.min(lattice),
-    }
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use moine_core::distance;
 
     #[test]
     fn combined_takes_the_better_surface_or_lattice_distance() {

@@ -6,7 +6,7 @@ use std::io::Write as _;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use moine_core::{distance_with_trace, try_distance_with_trace, DistanceTrace, Lattice, Symbol};
+use moine_core::{try_distance_with_trace, DistanceTrace, Lattice, Symbol};
 use moine_ja::{
     compare_with_overrides, compare_with_unidic_index, unidic_or_direct_lattice,
     DictionaryReadingOptions, DictionaryReadingStats, JapaneseDistance, OverrideDictionary,
@@ -90,7 +90,10 @@ pub(crate) fn run_chinese_compare(options: ChineseCompareOptions) -> Result<(), 
     )?;
     let left_lattice = zh_or_direct_lattice(&options.left, &index, options.reading_options)?;
     let right_lattice = zh_or_direct_lattice(&options.right, &index, options.reading_options)?;
-    let trace = distance_with_trace(&left_lattice, &right_lattice);
+    let (trace, trace_error) = match try_distance_with_trace(&left_lattice, &right_lattice) {
+        Ok(trace) => (Some(trace), None),
+        Err(err) => (None, Some(err.to_string())),
+    };
     let left_expansion = query_pinyin_expansion(&options.left, &index, options.reading_options);
     let right_expansion = query_pinyin_expansion(&options.right, &index, options.reading_options);
     let (source_label, source_path) = options.source.label();
@@ -118,7 +121,12 @@ pub(crate) fn run_chinese_compare(options: ChineseCompareOptions) -> Result<(), 
     println!("surface_damerau:     {}", distances.surface_damerau);
     print_pinyin_query_stats("left_expansion", &left_expansion);
     print_pinyin_query_stats("right_expansion", &right_expansion);
-    print_chinese_lattice_result("cn_pinyin_lattice", distances, &trace);
+    print_chinese_lattice_result(
+        "cn_pinyin_lattice",
+        distances,
+        trace.as_ref(),
+        trace_error.as_deref(),
+    );
 
     Ok(())
 }
@@ -278,7 +286,10 @@ pub(crate) fn run_compare(options: CompareOptions) -> Result<(), Box<dyn Error>>
         let distances = compare_with_overrides(&options.left, &options.right, &overrides)?;
         let left_lattice = overrides.romaji_lattice(&options.left)?;
         let right_lattice = overrides.romaji_lattice(&options.right)?;
-        let trace = distance_with_trace(&left_lattice, &right_lattice);
+        let (trace, trace_error) = match try_distance_with_trace(&left_lattice, &right_lattice) {
+            Ok(trace) => (Some(trace), None),
+            Err(err) => (None, Some(err.to_string())),
+        };
         if options.romaji_lattice.is_some() {
             romaji_lattice_data = Some(RomajiLatticeData {
                 left_input: options.left.clone(),
@@ -286,11 +297,11 @@ pub(crate) fn run_compare(options: CompareOptions) -> Result<(), Box<dyn Error>>
                 left_lattice: left_lattice.clone(),
                 right_lattice: right_lattice.clone(),
                 distance: distances.lattice,
-                trace: Some(trace.clone()),
-                trace_error: None,
+                trace: trace.clone(),
+                trace_error: trace_error.clone(),
             });
         }
-        Some((distances, trace))
+        Some((distances, trace, trace_error))
     } else {
         None
     };
@@ -393,7 +404,7 @@ pub(crate) fn run_compare(options: CompareOptions) -> Result<(), Box<dyn Error>>
 
     let surface_distances = override_result
         .as_ref()
-        .map(|(distances, _)| *distances)
+        .map(|(distances, _, _)| *distances)
         .or_else(|| dict_result.as_ref().map(|result| result.distances))
         .expect("comparison method should be present");
 
@@ -406,8 +417,13 @@ pub(crate) fn run_compare(options: CompareOptions) -> Result<(), Box<dyn Error>>
     );
     println!("surface_damerau:     {}", surface_distances.surface_damerau);
 
-    if let Some((distances, trace)) = override_result {
-        print_lattice_result("ja_override_lattice", distances, Some(&trace), None);
+    if let Some((distances, trace, trace_error)) = override_result {
+        print_lattice_result(
+            "ja_override_lattice",
+            distances,
+            trace.as_ref(),
+            trace_error.as_deref(),
+        );
     }
 
     if let Some(result) = dict_result {
@@ -665,15 +681,20 @@ pub(crate) fn print_pinyin_stats(label: &str, stats: &PinyinReadingStats) {
 pub(crate) fn print_chinese_lattice_result(
     label: &str,
     distances: ChineseDistance,
-    trace: &moine_core::DistanceTrace,
+    trace: Option<&moine_core::DistanceTrace>,
+    trace_error: Option<&str>,
 ) {
     println!();
     println!("{label}: {}", distances.lattice);
     println!("{label}_damerau: {}", distances.lattice_damerau);
     println!("{label}_combined: {}", distances.combined);
-    println!("{label}_best_path:");
-    println!("  left:  {}", symbols_to_string(&trace.left_symbols()));
-    println!("  right: {}", symbols_to_string(&trace.right_symbols()));
+    if let Some(trace) = trace {
+        println!("{label}_best_path:");
+        println!("  left:  {}", symbols_to_string(&trace.left_symbols()));
+        println!("  right: {}", symbols_to_string(&trace.right_symbols()));
+    } else if let Some(error) = trace_error {
+        println!("{label}_best_path: unavailable ({error})");
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

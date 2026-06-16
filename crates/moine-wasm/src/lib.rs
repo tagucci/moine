@@ -1,6 +1,6 @@
 use std::io::Cursor;
 
-use moine_core::{damerau_levenshtein_str, distance, levenshtein_str};
+use moine_core::{levenshtein_str, try_damerau_levenshtein_str, try_distance};
 use moine_ja::{
     unidic_or_direct_lattice, DictionaryReadingOptions, JaLatticeError, UnidicArtifactMetadata,
     UnidicReadingIndex,
@@ -95,7 +95,8 @@ impl MoineDemo {
 
         Ok(ComparisonResult {
             levenshtein_distance: levenshtein_str(left, right),
-            damerau_levenshtein_distance: damerau_levenshtein_str(left, right),
+            damerau_levenshtein_distance: try_damerau_levenshtein_str(left, right)
+                .map_err(distance_error)?,
             lattice_path_edit_distance,
         })
     }
@@ -112,7 +113,7 @@ impl JapaneseDictionary {
             unidic_or_direct_lattice(left, &self.index, self.options).map_err(japanese_error)?;
         let right_lattice =
             unidic_or_direct_lattice(right, &self.index, self.options).map_err(japanese_error)?;
-        Ok(distance(&left_lattice, &right_lattice))
+        try_distance(&left_lattice, &right_lattice).map_err(distance_error)
     }
 }
 
@@ -127,7 +128,7 @@ impl ChineseDictionary {
             zh_or_direct_lattice(left, &self.index, self.options).map_err(chinese_error)?;
         let right_lattice =
             zh_or_direct_lattice(right, &self.index, self.options).map_err(chinese_error)?;
-        Ok(distance(&left_lattice, &right_lattice))
+        try_distance(&left_lattice, &right_lattice).map_err(distance_error)
     }
 }
 
@@ -324,14 +325,18 @@ fn chinese_error(err: CnLatticeError) -> JsValue {
     JsValue::from_str(&format!("Chinese LPED failed: {err}"))
 }
 
+fn distance_error(err: moine_core::DistanceError) -> JsValue {
+    JsValue::from_str(&format!("LPED failed: {err}"))
+}
+
 #[wasm_bindgen(js_name = levenshteinDistance)]
 pub fn levenshtein_distance(left: &str, right: &str) -> usize {
     levenshtein_str(left, right)
 }
 
 #[wasm_bindgen(js_name = damerauLevenshteinDistance)]
-pub fn damerau_levenshtein_distance(left: &str, right: &str) -> usize {
-    damerau_levenshtein_str(left, right)
+pub fn damerau_levenshtein_distance(left: &str, right: &str) -> Result<usize, JsValue> {
+    try_damerau_levenshtein_str(left, right).map_err(distance_error)
 }
 
 #[cfg(test)]

@@ -129,7 +129,8 @@ MOINE_BIN="$moine_bin" scripts/release-unidic-cwj.sh \
   > "$tmp/release-recipe.txt"
 grep -q 'release asset:' "$tmp/release-recipe.txt"
 test -f "$tmp/recipe-dist/moine-unidic-recipe-test.tar.gz"
-test ! -f "$tmp/recipe-dist/SHA256SUMS"
+test -f "$tmp/recipe-dist/SHA256SUMS"
+grep -q '  moine-unidic-recipe-test.tar.gz$' "$tmp/recipe-dist/SHA256SUMS"
 MOINE_BIN="$moine_bin" scripts/release-sudachi-full.sh \
   --lex-csv "$tmp/sudachi/full_lex.csv" \
   --source-version test \
@@ -140,6 +141,8 @@ MOINE_BIN="$moine_bin" scripts/release-sudachi-full.sh \
   > "$tmp/release-sudachi-recipe.txt"
 grep -q 'release asset:' "$tmp/release-sudachi-recipe.txt"
 test -f "$tmp/sudachi-recipe-dist/moine-sudachi-recipe-test.tar.gz"
+test -f "$tmp/sudachi-recipe-dist/SHA256SUMS"
+grep -q '  moine-sudachi-recipe-test.tar.gz$' "$tmp/sudachi-recipe-dist/SHA256SUMS"
 grep -q 'max_span_chars: 24' "$tmp/sudachi-recipe-dist/moine-sudachi-recipe-test/metadata.yaml"
 
 tar -tf "$tmp/dist/moine-unidic-test.tar" | sort > "$tmp/archive.txt"

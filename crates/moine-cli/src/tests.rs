@@ -102,6 +102,10 @@ fn parses_sudachi_download_options() {
         .spec
         .archive_url
         .contains("moine-sudachi-full-20260428-v0.2.0"));
+    assert!(options
+        .spec
+        .checksum_url
+        .is_some_and(|url| url.contains("moine-sudachi-full-20260428-v0.2.0/SHA256SUMS")));
 }
 
 #[test]
@@ -114,6 +118,10 @@ fn parses_unidic_download_options() {
         .spec
         .archive_url
         .contains("unidic-cwj-202512-v0.1.1"));
+    assert!(options
+        .spec
+        .checksum_url
+        .is_some_and(|url| url.contains("unidic-cwj-202512-v0.1.1/SHA256SUMS")));
 
     let explicit = DownloadCliOptions::parse(vec!["ja-unidic".to_string()]).unwrap();
     assert_eq!(explicit.spec.language, ArtifactLanguage::Japanese);
@@ -130,14 +138,23 @@ fn default_download_specs_point_to_current_artifact_releases() {
     assert!(ja
         .archive_url
         .contains("unidic-cwj-202512-v0.1.1/moine-unidic-cwj-202512.tar.gz"));
+    assert!(ja
+        .checksum_url
+        .is_some_and(|url| url.contains("unidic-cwj-202512-v0.1.1/SHA256SUMS")));
     assert_eq!(sudachi.artifact_name, "moine-sudachi-full-20260428");
     assert!(sudachi
         .archive_url
         .contains("moine-sudachi-full-20260428-v0.2.0/moine-sudachi-full-20260428.tar.gz"));
+    assert!(sudachi
+        .checksum_url
+        .is_some_and(|url| url.contains("moine-sudachi-full-20260428-v0.2.0/SHA256SUMS")));
     assert_eq!(zh.artifact_name, "moine-cedict-20260520");
     assert!(zh
         .archive_url
         .contains("moine-cedict-20260520-v0.1.1/moine-cedict-20260520.tar.gz"));
+    assert!(zh
+        .checksum_url
+        .is_some_and(|url| url.contains("moine-cedict-20260520-v0.1.1/SHA256SUMS")));
 }
 
 #[test]

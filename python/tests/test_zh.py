@@ -140,6 +140,20 @@ def test_zh_bundle_helpers_use_metadata_defaults(tmp_path):
     assert within_distance("布納哈奔", "布納哈本", 0, dictionary=dictionary)
 
 
+def test_zh_loader_rejects_missing_license_reference(tmp_path):
+    metadata_path, _ = write_test_bundle(tmp_path)
+    metadata_path.write_text(
+        metadata_path.read_text(encoding="utf-8").replace(
+            "  references: []",
+            "  references:\n  - label: CC-CEDICT\n    path: license/CC-CEDICT.md\n",
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="missing license reference CC-CEDICT"):
+        load_bundle(tmp_path)
+
+
 def test_top_level_cdist_zh_uses_default_dictionary(tmp_path):
     dictionary = load_bundle(write_test_bundle(tmp_path)[0])
     queries = ["weishiji", "布呐哈本"]

@@ -77,9 +77,13 @@ def load_dict(
             "or add a bundle to MOINE_DICTIONARIES_PATH."
         )
     if lang in _JAPANESE_LANGS:
-        return JapaneseDictionary.load_bundle(os.fspath(artifact_path))
+        dictionary = JapaneseDictionary.load_bundle(os.fspath(artifact_path))
+        _validate_dictionary(lang, dictionary)
+        return dictionary
     if lang == "zh":
-        return ChineseDictionary.load_bundle(os.fspath(artifact_path))
+        dictionary = ChineseDictionary.load_bundle(os.fspath(artifact_path))
+        _validate_dictionary(lang, dictionary)
+        return dictionary
     raise AssertionError("unreachable language branch")
 
 
@@ -759,18 +763,66 @@ def _normalized_score_cutoff(score_cutoff: int | float | None) -> float | None:
 
 
 def _validate_dictionary(lang: Language, dictionary: _Dictionary) -> None:
-    if lang in _JAPANESE_LANGS and not isinstance(dictionary, JapaneseDictionary):
-        raise TypeError("dictionary must be JapaneseDictionary for Japanese lang")
+    if lang in _JAPANESE_LANGS:
+        if not isinstance(dictionary, JapaneseDictionary):
+            raise TypeError("dictionary must be JapaneseDictionary for Japanese lang")
+        _validate_japanese_dictionary_identity(lang, dictionary)
+        return
     if lang == "zh" and not isinstance(dictionary, ChineseDictionary):
         raise TypeError("dictionary must be ChineseDictionary for lang='zh'")
 
 
 def _dictionary_lang(dictionary: _Dictionary) -> Language:
     if isinstance(dictionary, JapaneseDictionary):
+        if _is_sudachi_dictionary(dictionary):
+            return "ja-sudachi"
         return "ja"
     if isinstance(dictionary, ChineseDictionary):
         return "zh"
     raise TypeError("dictionary must be JapaneseDictionary or ChineseDictionary")
+
+
+def _validate_japanese_dictionary_identity(
+    lang: Language,
+    dictionary: JapaneseDictionary,
+) -> None:
+    artifact_name = dictionary.artifact_name
+    source_name = dictionary.source_name
+    reading_field = dictionary.reading_field
+
+    if lang in {"ja", "ja-unidic"}:
+        if artifact_name is not None and artifact_name.startswith("moine-sudachi"):
+            raise ValueError(f"lang={lang!r} requires a UniDic artifact; got {artifact_name!r}")
+        if source_name is not None and source_name != "UniDic-CWJ":
+            raise ValueError(f"lang={lang!r} requires source 'UniDic-CWJ'; got {source_name!r}")
+        if reading_field == "sudachi-reading":
+            raise ValueError(
+                f"lang={lang!r} requires a UniDic reading artifact; got Sudachi metadata"
+            )
+        return
+
+    if lang == "ja-sudachi":
+        if artifact_name is not None and artifact_name.startswith("moine-unidic"):
+            raise ValueError(
+                f"lang='ja-sudachi' requires a Sudachi artifact; got {artifact_name!r}"
+            )
+        if source_name is not None and source_name != "SudachiDict":
+            raise ValueError(
+                f"lang='ja-sudachi' requires source 'SudachiDict'; got {source_name!r}"
+            )
+        if reading_field is not None and reading_field != "sudachi-reading":
+            raise ValueError(
+                f"lang='ja-sudachi' requires reading_field 'sudachi-reading'; got {reading_field!r}"
+            )
+
+
+def _is_sudachi_dictionary(dictionary: JapaneseDictionary) -> bool:
+    artifact_name = dictionary.artifact_name
+    if artifact_name is not None and artifact_name.startswith("moine-sudachi"):
+        return True
+    if dictionary.source_name == "SudachiDict":
+        return True
+    return dictionary.reading_field == "sudachi-reading"
 
 
 def _default_dictionary_cache_keys(lang: Language) -> tuple[Language, ...]:

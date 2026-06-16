@@ -112,6 +112,14 @@ def test_default_artifact_urls_and_japanese_aliases():
     assert "unidic-cwj-202512-v0.1.1" in ARTIFACT_SPECS["ja-unidic"].archive_url
     assert "moine-sudachi-full-20260428-v0.2.0" in ARTIFACT_SPECS["ja-sudachi"].archive_url
     assert "moine-cedict-20260520-v0.1.1" in ARTIFACT_SPECS["zh"].archive_url
+    assert ARTIFACT_SPECS["ja"].checksum_url is not None
+    assert ARTIFACT_SPECS["ja"].checksum_url.endswith("/unidic-cwj-202512-v0.1.1/SHA256SUMS")
+    assert ARTIFACT_SPECS["ja-sudachi"].checksum_url is not None
+    assert ARTIFACT_SPECS["ja-sudachi"].checksum_url.endswith(
+        "/moine-sudachi-full-20260428-v0.2.0/SHA256SUMS"
+    )
+    assert ARTIFACT_SPECS["zh"].checksum_url is not None
+    assert ARTIFACT_SPECS["zh"].checksum_url.endswith("/moine-cedict-20260520-v0.1.1/SHA256SUMS")
 
 
 def test_download_list_where_and_default_cache_lookup(tmp_path, monkeypatch, capsys):
@@ -191,6 +199,52 @@ def test_sudachi_download_where_and_cache_lookup(tmp_path, monkeypatch, capsys):
         moine.clear_default_dictionary(lang="ja-sudachi")
 
 
+def test_download_rejects_japanese_selector_mismatch(tmp_path):
+    cache_dir = tmp_path / "cache"
+    archive = write_archive(tmp_path)
+
+    with pytest.raises(ValueError, match="requires a SudachiDict artifact"):
+        cli_main(
+            [
+                "download",
+                "ja-sudachi",
+                "--url",
+                str(archive),
+                "--cache-dir",
+                str(cache_dir),
+            ]
+        )
+
+
+def test_japanese_env_path_must_match_requested_selector(tmp_path, monkeypatch):
+    sudachi_bundle = tmp_path / "moine-sudachi-full-20260428-test"
+    write_ja_bundle(
+        sudachi_bundle,
+        artifact_name="moine-sudachi-full-20260428-test",
+        source_name="SudachiDict",
+        reading_field="sudachi-reading",
+    )
+
+    monkeypatch.setenv("MOINE_JA_DICTIONARY", str(sudachi_bundle))
+    moine.clear_default_dictionary(lang="ja")
+    moine.clear_default_dictionary(lang="ja-sudachi")
+    try:
+        with pytest.raises(ValueError, match="requires a UniDic artifact"):
+            moine.load_dict(lang="ja")
+        assert moine.load_dict(lang="ja-sudachi").distance("いんさt", "印刷") == 1
+    finally:
+        moine.clear_default_dictionary(lang="ja")
+        moine.clear_default_dictionary(lang="ja-sudachi")
+
+
+def test_japanese_explicit_path_must_match_requested_selector(tmp_path):
+    unidic_bundle = tmp_path / "moine-unidic-cwj-202512-test"
+    write_ja_bundle(unidic_bundle)
+
+    with pytest.raises(ValueError, match="requires a Sudachi artifact"):
+        moine.load_dict(lang="ja-sudachi", path=unidic_bundle)
+
+
 def test_japanese_default_cache_prefers_unidic_over_sudachi(tmp_path, monkeypatch):
     cache_dir = tmp_path / "cache"
     write_ja_bundle(cache_dir / "moine-sudachi-full-20260428-test", insatsu_reading="アウト")
@@ -202,6 +256,45 @@ def test_japanese_default_cache_prefers_unidic_over_sudachi(tmp_path, monkeypatc
         assert moine.distance("いんさt", "印刷", lang="ja") == 1
     finally:
         moine.clear_default_dictionary(lang="ja")
+
+
+def test_japanese_loader_rejects_wrong_artifact_type(tmp_path):
+    bundle = tmp_path / "moine-unidic-cwj-202512-test"
+    write_ja_bundle(bundle)
+    metadata = bundle / "metadata.yaml"
+    metadata.write_text(
+        metadata.read_text(encoding="utf-8").replace(
+            "artifact_type: moine.unidic.reading-index",
+            "artifact_type: moine.zh.reading-index",
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="unsupported Japanese artifact type"):
+        moine.JapaneseDictionary.load_bundle(str(bundle))
+
+
+def test_japanese_loader_rejects_missing_license_reference(tmp_path):
+    bundle = tmp_path / "moine-unidic-cwj-202512-test"
+    write_ja_bundle(bundle)
+    metadata = bundle / "metadata.yaml"
+    metadata.write_text(
+        metadata.read_text(encoding="utf-8").replace(
+            "  references: []",
+            "  references:\n  - label: BSD\n    path: license/BSD\n",
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="missing license reference BSD"):
+        moine.JapaneseDictionary.load_bundle(str(bundle))
+
+
+def test_large_python_distance_returns_error_instead_of_panicking():
+    text = "a" * 4000
+
+    with pytest.raises(ValueError, match="distance matrix"):
+        moine.distance(text, text)
 
 
 def test_extract_archive_rejects_links(tmp_path):

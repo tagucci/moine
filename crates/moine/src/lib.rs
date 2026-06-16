@@ -222,14 +222,15 @@ pub mod ja {
         pub fn distance(&self, left: &str, right: &str) -> Result<usize, JaLatticeError> {
             let left_lattice = unidic_or_direct_lattice(left, &self.index, self.options)?;
             let right_lattice = unidic_or_direct_lattice(right, &self.index, self.options)?;
-            Ok(moine_core::distance(&left_lattice, &right_lattice))
+            moine_core::try_distance(&left_lattice, &right_lattice).map_err(JaLatticeError::from)
         }
 
         /// Computes Japanese lattice-aware Damerau-Levenshtein distance.
         pub fn damerau_distance(&self, left: &str, right: &str) -> Result<usize, JaLatticeError> {
             let left_lattice = unidic_or_direct_lattice(left, &self.index, self.options)?;
             let right_lattice = unidic_or_direct_lattice(right, &self.index, self.options)?;
-            Ok(moine_core::damerau_distance(&left_lattice, &right_lattice))
+            moine_core::try_damerau_distance(&left_lattice, &right_lattice)
+                .map_err(JaLatticeError::from)
         }
 
         /// Computes normalized Japanese reading-space similarity.
@@ -595,14 +596,15 @@ pub mod zh {
         pub fn distance(&self, left: &str, right: &str) -> Result<usize, CnLatticeError> {
             let left_lattice = zh_or_direct_lattice(left, &self.index, self.options)?;
             let right_lattice = zh_or_direct_lattice(right, &self.index, self.options)?;
-            Ok(moine_core::distance(&left_lattice, &right_lattice))
+            moine_core::try_distance(&left_lattice, &right_lattice).map_err(CnLatticeError::from)
         }
 
         /// Computes Chinese lattice-aware Damerau-Levenshtein distance.
         pub fn damerau_distance(&self, left: &str, right: &str) -> Result<usize, CnLatticeError> {
             let left_lattice = zh_or_direct_lattice(left, &self.index, self.options)?;
             let right_lattice = zh_or_direct_lattice(right, &self.index, self.options)?;
-            Ok(moine_core::damerau_distance(&left_lattice, &right_lattice))
+            moine_core::try_damerau_distance(&left_lattice, &right_lattice)
+                .map_err(CnLatticeError::from)
         }
 
         /// Computes normalized Chinese pinyin-space similarity.

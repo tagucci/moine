@@ -23,7 +23,7 @@ environment overrides:
   PINYIN_VIEW, MAX_READINGS_PER_SURFACE, MAX_READINGS_PER_SEGMENT, MAX_PATHS
   PAYLOAD_FORMAT           Payload format: indexed or yaml
   RELEASE_COMPRESSION      Archive compression: xz, gzip, zstd, or none
-  RELEASE_CHECKSUM_MANIFEST Set to 1 to write SHA256SUMS
+  RELEASE_CHECKSUM_MANIFEST Set to 0 to skip SHA256SUMS
   MOINE_BIN                Existing moine binary to use instead of building
 USAGE
 }
@@ -39,7 +39,7 @@ max_readings_per_surface="${MAX_READINGS_PER_SURFACE:-16}"
 max_readings_per_segment="${MAX_READINGS_PER_SEGMENT:-16}"
 max_paths="${MAX_PATHS:-128}"
 compression="${RELEASE_COMPRESSION:-gzip}"
-checksum_manifest="${RELEASE_CHECKSUM_MANIFEST:-0}"
+checksum_manifest="${RELEASE_CHECKSUM_MANIFEST:-1}"
 
 while [ "$#" -gt 0 ]; do
   case "$1" in

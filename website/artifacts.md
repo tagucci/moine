@@ -50,9 +50,10 @@ uv run python -m moine where ja-sudachi
 uv run python -m moine where zh
 ```
 
-The default public assets are compressed tar archives. The downloader safely
-extracts the archive and verifies the unpacked bundle metadata and payload
-digest before moving it into the cache.
+The default public assets are compressed tar archives. The downloader verifies
+the archive SHA-256 from the release `SHA256SUMS` manifest before extraction,
+then verifies the unpacked bundle metadata and payload digest before moving it
+into the cache.
 
 ## Manual Artifacts
 

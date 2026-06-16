@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::fmt;
 
-use moine_core::{Lattice, LatticeError, Symbol};
+use moine_core::{DistanceError, Lattice, LatticeError, Symbol};
 
 use crate::kana::{is_kana, normalize_kana_char};
 
@@ -35,6 +35,8 @@ pub enum JaLatticeError {
     EmptyReadings,
     /// The underlying lattice shape was invalid.
     Lattice(LatticeError),
+    /// Distance computation exceeded the configured matrix-size limit.
+    Distance(DistanceError),
     /// A dictionary artifact payload failed while expanding readings.
     ArtifactPayload(String),
 }
@@ -50,16 +52,34 @@ impl fmt::Display for JaLatticeError {
             }
             Self::EmptyReadings => write!(f, "at least one reading is required"),
             Self::Lattice(err) => write!(f, "{err}"),
+            Self::Distance(err) => write!(f, "{err}"),
             Self::ArtifactPayload(err) => write!(f, "{err}"),
         }
     }
 }
 
-impl Error for JaLatticeError {}
+impl Error for JaLatticeError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Lattice(err) => Some(err),
+            Self::Distance(err) => Some(err),
+            Self::UnsupportedChar { .. }
+            | Self::MissingVariant { .. }
+            | Self::EmptyReadings
+            | Self::ArtifactPayload(_) => None,
+        }
+    }
+}
 
 impl From<LatticeError> for JaLatticeError {
     fn from(value: LatticeError) -> Self {
         Self::Lattice(value)
+    }
+}
+
+impl From<DistanceError> for JaLatticeError {
+    fn from(value: DistanceError) -> Self {
+        Self::Distance(value)
     }
 }
 

@@ -37,7 +37,10 @@ const DOWNLOAD_ARTIFACT_SPECS: &[DownloadArtifactSpec] = &[
             "https://github.com/tagucci/moine/releases/download/",
             "unidic-cwj-202512-v0.1.1/moine-unidic-cwj-202512.tar.gz"
         ),
-        checksum_url: None,
+        checksum_url: Some(concat!(
+            "https://github.com/tagucci/moine/releases/download/",
+            "unidic-cwj-202512-v0.1.1/SHA256SUMS"
+        )),
     },
     DownloadArtifactSpec {
         language: ArtifactLanguage::JapaneseSudachi,
@@ -47,7 +50,10 @@ const DOWNLOAD_ARTIFACT_SPECS: &[DownloadArtifactSpec] = &[
             "https://github.com/tagucci/moine/releases/download/",
             "moine-sudachi-full-20260428-v0.2.0/moine-sudachi-full-20260428.tar.gz"
         ),
-        checksum_url: None,
+        checksum_url: Some(concat!(
+            "https://github.com/tagucci/moine/releases/download/",
+            "moine-sudachi-full-20260428-v0.2.0/SHA256SUMS"
+        )),
     },
     DownloadArtifactSpec {
         language: ArtifactLanguage::Chinese,
@@ -57,7 +63,10 @@ const DOWNLOAD_ARTIFACT_SPECS: &[DownloadArtifactSpec] = &[
             "https://github.com/tagucci/moine/releases/download/",
             "moine-cedict-20260520-v0.1.1/moine-cedict-20260520.tar.gz"
         ),
-        checksum_url: None,
+        checksum_url: Some(concat!(
+            "https://github.com/tagucci/moine/releases/download/",
+            "moine-cedict-20260520-v0.1.1/SHA256SUMS"
+        )),
     },
 ];
 

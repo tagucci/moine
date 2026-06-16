@@ -553,11 +553,11 @@ uv run python -m moine list
 uv run python -m moine where
 ```
 
-`download` is responsible for archive extraction plus mandatory metadata and
-payload digest verification before a bundle is written into the local cache. It
-also verifies an archive SHA-256 when `--sha256` or `--checksum-url` is supplied,
-but a separate `SHA256SUMS` asset is no longer part of the default public
-release shape. A separate `verify` command is not part of the initial
+`download` is responsible for archive checksum verification, archive extraction,
+and mandatory metadata and payload digest verification before a bundle is written
+into the local cache. The baked-in public artifact URLs use a release-local
+`SHA256SUMS` asset by default; `--sha256` and `--checksum-url` remain available
+for mirrored or local release testing. A separate `verify` command is not part of the initial
 user-facing surface; if needed later, it should target an explicit artifact path
 for manually downloaded, mirrored, or copied bundles rather than a vague
 language name such as `verify ja`.
@@ -672,8 +672,8 @@ The UniDic script accepts `--artifact-name`, `--dist-dir`, `--license-dir`,
 `--payload-format`, and `--compression`, plus environment overrides for
 `MAX_READINGS_PER_SURFACE`, `MAX_READINGS_PER_SEGMENT`, `MAX_PATHS`,
 `RELEASE_PAYLOAD_FORMAT`, `RELEASE_COMPRESSION`, `RELEASE_CHECKSUM_MANIFEST`,
-and `MOINE_BIN`. Use `--checksum-manifest` when a release should also emit
-`dist/SHA256SUMS`. The script intentionally does not create a GitHub Release or
+and `MOINE_BIN`. Public release recipes emit `dist/SHA256SUMS` by default; set
+`RELEASE_CHECKSUM_MANIFEST=0` only for local scratch builds. The script intentionally does not create a GitHub Release or
 sign assets; publishing and key management are kept outside the local build
 recipe.
 
@@ -694,7 +694,7 @@ Release integrity has three layers:
 - `payload.file_digest` verifies the raw payload file inside an unpacked bundle.
 - `payload.checksum` verifies the canonical logical `surface -> readings`
   payload whenever metadata includes a checksum.
-- optional `SHA256SUMS` verifies the published release asset, such as
+- `SHA256SUMS` verifies the published release asset, such as
   `moine-unidic-cwj-202512.tar.gz`, before unpacking.
 
 Detached signing should be applied to `SHA256SUMS` or to the final archive

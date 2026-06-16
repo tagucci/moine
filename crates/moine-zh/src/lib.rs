@@ -54,8 +54,8 @@ use std::sync::Arc;
 use fst::{Map, MapBuilder, Streamer};
 use memmap2::Mmap;
 use moine_core::{
-    damerau_distance, damerau_levenshtein_str, distance, levenshtein_str,
-    normalized_similarity_str, Lattice,
+    levenshtein_str, normalized_similarity_str, try_damerau_distance, try_damerau_levenshtein_str,
+    try_distance, DistanceError, Lattice,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -534,6 +534,8 @@ pub enum CnLatticeError {
     },
     /// Artifact loading or indexed payload decoding failed.
     ArtifactPayload(String),
+    /// Distance computation exceeded the configured matrix-size limit.
+    Distance(DistanceError),
 }
 
 impl PinyinView {
@@ -730,11 +732,27 @@ impl fmt::Display for CnLatticeError {
                 write!(f, "unsupported direct pinyin input {surface:?}")
             }
             Self::ArtifactPayload(err) => write!(f, "{err}"),
+            Self::Distance(err) => write!(f, "{err}"),
         }
     }
 }
 
-impl Error for CnLatticeError {}
+impl Error for CnLatticeError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Distance(err) => Some(err),
+            Self::EmptyReadings
+            | Self::UnsupportedDirectInput { .. }
+            | Self::ArtifactPayload(_) => None,
+        }
+    }
+}
+
+impl From<DistanceError> for CnLatticeError {
+    fn from(value: DistanceError) -> Self {
+        Self::Distance(value)
+    }
+}
 
 impl CedictReadingIndex {
     /// Builds an index from a CC-CEDICT text file.
@@ -1503,7 +1521,7 @@ pub fn compare_with_zh_index(
 ) -> Result<ChineseDistance, CnLatticeError> {
     let left_lattice = cedict_or_direct_lattice(left, index, options)?;
     let right_lattice = cedict_or_direct_lattice(right, index, options)?;
-    Ok(compare_lattices(left, right, &left_lattice, &right_lattice))
+    compare_lattices(left, right, &left_lattice, &right_lattice)
 }
 
 /// Computes the best normalized similarity across Chinese pinyin readings.
@@ -1597,19 +1615,19 @@ fn compare_lattices(
     right: &str,
     left_lattice: &Lattice,
     right_lattice: &Lattice,
-) -> ChineseDistance {
-    let lattice = distance(left_lattice, right_lattice);
-    let lattice_damerau = damerau_distance(left_lattice, right_lattice);
+) -> Result<ChineseDistance, CnLatticeError> {
+    let lattice = try_distance(left_lattice, right_lattice)?;
+    let lattice_damerau = try_damerau_distance(left_lattice, right_lattice)?;
     let surface_levenshtein = levenshtein_str(left, right);
-    let surface_damerau = damerau_levenshtein_str(left, right);
+    let surface_damerau = try_damerau_levenshtein_str(left, right)?;
 
-    ChineseDistance {
+    Ok(ChineseDistance {
         surface_levenshtein,
         surface_damerau,
         lattice,
         lattice_damerau,
         combined: surface_damerau.min(lattice),
-    }
+    })
 }
 
 fn char_boundaries(text: &str) -> Vec<usize> {

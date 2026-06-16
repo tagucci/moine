@@ -203,11 +203,14 @@ pub(crate) fn download_expected_sha256(
     if let Some(value) = &options.sha256 {
         return Ok(Some(value.to_ascii_lowercase()));
     }
-    if let Some(checksum_url) = options
-        .checksum_url
-        .as_deref()
-        .or(options.spec.checksum_url)
-    {
+    let checksum_url = options.checksum_url.as_deref().or_else(|| {
+        options
+            .url
+            .is_none()
+            .then_some(options.spec.checksum_url)
+            .flatten()
+    });
+    if let Some(checksum_url) = checksum_url {
         return Ok(Some(expected_sha256(checksum_url, archive_name)?));
     }
     Ok(None)
@@ -236,11 +239,44 @@ pub(crate) fn verify_downloaded_bundle(
     })?;
     match language {
         ArtifactLanguage::Japanese | ArtifactLanguage::JapaneseSudachi => {
-            verify_unidic_artifact_bundle(metadata, None, false)?;
+            let verified = verify_unidic_artifact_bundle(metadata, None, false)?;
+            verify_japanese_download_identity(language, &verified.metadata)?;
         }
         ArtifactLanguage::Chinese => {
             verify_zh_artifact_bundle(metadata, None)?;
         }
+    }
+    Ok(())
+}
+
+fn verify_japanese_download_identity(
+    language: ArtifactLanguage,
+    metadata: &moine_ja::UnidicArtifactMetadata,
+) -> Result<(), Box<dyn Error>> {
+    match language {
+        ArtifactLanguage::Japanese => {
+            if metadata.artifact_name.starts_with("moine-sudachi")
+                || metadata.source.name != "UniDic-CWJ"
+                || metadata.build.reading_field == "sudachi-reading"
+            {
+                return Err(Box::new(CliError::ArtifactVerificationFailed(format!(
+                    "download ja requires a UniDic-CWJ artifact; got {} from {}",
+                    metadata.artifact_name, metadata.source.name
+                ))));
+            }
+        }
+        ArtifactLanguage::JapaneseSudachi => {
+            if metadata.artifact_name.starts_with("moine-unidic")
+                || metadata.source.name != "SudachiDict"
+                || metadata.build.reading_field != "sudachi-reading"
+            {
+                return Err(Box::new(CliError::ArtifactVerificationFailed(format!(
+                    "download ja-sudachi requires a SudachiDict artifact; got {} from {}",
+                    metadata.artifact_name, metadata.source.name
+                ))));
+            }
+        }
+        ArtifactLanguage::Chinese => {}
     }
     Ok(())
 }
