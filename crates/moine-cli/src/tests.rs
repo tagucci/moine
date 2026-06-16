@@ -11,6 +11,7 @@ use moine_zh::PinyinView;
 use crate::archive::*;
 use crate::args::*;
 use crate::commands::compare::*;
+use crate::commands::unidic_artifact::run_unidic_artifact_runtime_measure;
 
 #[test]
 fn parses_mecab_lform_as_reading() {
@@ -471,6 +472,31 @@ fn romaji_lattice_graph_reports_missing_dot_command() {
     assert!(message.contains("required command \"__moine_missing_dot__\""));
     assert!(message.contains("install Graphviz"));
     assert!(message.contains("--output-format dot"));
+}
+
+#[test]
+fn compare_reports_missing_method_for_direct_options() {
+    let err = run_compare(CompareOptions {
+        left: "moine".to_string(),
+        right: "moinya".to_string(),
+        overrides: None,
+        lex_csv: None,
+        sudachi_lex_csv: None,
+        artifact_payload: None,
+        artifact_metadata: None,
+        payload_format: ArtifactPayloadFormat::Yaml,
+        romaji_lattice: None,
+        output_format: RomajiLatticeOutputFormat::Dot,
+        index_options: Default::default(),
+        sudachi_index_options: Default::default(),
+        dictionary_options: Default::default(),
+        dictionary_option_overrides: Default::default(),
+    })
+    .expect_err("direct options without a comparison method should be rejected");
+
+    let message = err.to_string();
+    assert!(message.contains("missing required argument"));
+    assert!(message.contains("--artifact-metadata"));
 }
 
 #[test]
@@ -1222,4 +1248,36 @@ fn parses_unidic_artifact_runtime_measure_options() {
     );
     assert_eq!(options.warmups, 2);
     assert_eq!(options.iterations, 10);
+}
+
+#[test]
+fn runtime_measure_rejects_zero_iterations_before_loading_artifact() {
+    let err = run_unidic_artifact_runtime_measure(UnidicArtifactRuntimeMeasureCliOptions {
+        metadata: "/does/not/exist/metadata.yaml".to_string(),
+        bundle_dir: None,
+        pairs: vec![RuntimeMeasurePair {
+            left: "いんさt".to_string(),
+            right: "印刷".to_string(),
+        }],
+        warmups: 0,
+        iterations: 0,
+    })
+    .expect_err("zero iterations should be rejected before artifact IO");
+
+    let message = err.to_string();
+    assert!(message.contains("invalid value \"0\" for argument --iterations"));
+}
+
+#[test]
+fn runtime_measure_rejects_empty_pairs_before_loading_artifact() {
+    let err = run_unidic_artifact_runtime_measure(UnidicArtifactRuntimeMeasureCliOptions {
+        metadata: "/does/not/exist/metadata.yaml".to_string(),
+        bundle_dir: None,
+        pairs: Vec::new(),
+        warmups: 0,
+        iterations: 1,
+    })
+    .expect_err("empty pairs should be rejected before artifact IO");
+
+    assert_eq!(err.to_string(), "missing required argument --pair");
 }

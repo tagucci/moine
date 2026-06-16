@@ -278,6 +278,12 @@ pub(crate) fn run_unidic_readings(options: UnidicReadingsOptions) -> Result<(), 
 }
 
 pub(crate) fn run_compare(options: CompareOptions) -> Result<(), Box<dyn Error>> {
+    if !has_japanese_comparison_method(&options) {
+        return Err(Box::new(CliError::MissingArgument(
+            "--overrides/--lex-csv/--sudachi-lex-csv/--artifact-payload/--artifact-metadata",
+        )));
+    }
+
     let mut romaji_lattice_data = None;
 
     let override_result = if let Some(overrides_path) = &options.overrides {
@@ -352,10 +358,9 @@ pub(crate) fn run_compare(options: CompareOptions) -> Result<(), Box<dyn Error>>
                 dictionary_options,
             )
         } else {
-            let payload = options
-                .artifact_payload
-                .as_ref()
-                .expect("artifact payload should be present");
+            let Some(payload) = options.artifact_payload.as_ref() else {
+                return Err(Box::new(CliError::MissingArgument("--artifact-payload")));
+            };
             (
                 load_artifact_payload_by_format(
                     Path::new(payload),
@@ -406,7 +411,11 @@ pub(crate) fn run_compare(options: CompareOptions) -> Result<(), Box<dyn Error>>
         .as_ref()
         .map(|(distances, _, _)| *distances)
         .or_else(|| dict_result.as_ref().map(|result| result.distances))
-        .expect("comparison method should be present");
+        .ok_or_else(|| {
+            Box::new(CliError::MissingArgument(
+                "--overrides/--lex-csv/--sudachi-lex-csv/--artifact-payload/--artifact-metadata",
+            )) as Box<dyn Error>
+        })?;
 
     println!("left:  {}", options.left);
     println!("right: {}", options.right);
@@ -448,9 +457,13 @@ pub(crate) fn run_compare(options: CompareOptions) -> Result<(), Box<dyn Error>>
     }
 
     if let Some(path) = &options.romaji_lattice {
-        let data = romaji_lattice_data
-            .as_ref()
-            .expect("comparison method should provide lattices for graph output");
+        let data = romaji_lattice_data.as_ref().ok_or_else(|| {
+            Box::new(CliError::IncompatibleArgument {
+                arg: "--romaji-lattice",
+                source: "comparison method",
+                expected: "use a Japanese comparison method that can build romaji lattices",
+            }) as Box<dyn Error>
+        })?;
         let dot = romaji_lattice_dot(data);
         match options.output_format {
             RomajiLatticeOutputFormat::Dot => write_output_file(Path::new(path), &dot)?,
@@ -466,6 +479,14 @@ pub(crate) fn run_compare(options: CompareOptions) -> Result<(), Box<dyn Error>>
     }
 
     Ok(())
+}
+
+fn has_japanese_comparison_method(options: &CompareOptions) -> bool {
+    options.overrides.is_some()
+        || options.lex_csv.is_some()
+        || options.sudachi_lex_csv.is_some()
+        || options.artifact_payload.is_some()
+        || options.artifact_metadata.is_some()
 }
 
 pub(crate) fn print_lattice_result(
@@ -829,7 +850,13 @@ pub(crate) fn write_romaji_lattice_graph_with_dot_command(
         })?;
 
     {
-        let stdin = child.stdin.as_mut().expect("dot stdin should be piped");
+        let stdin = child.stdin.as_mut().ok_or_else(|| {
+            Box::new(CliError::CommandFailed {
+                command: format!("{dot_command} -T{graphviz_format}"),
+                status: None,
+                stderr: "failed to open Graphviz stdin".to_string(),
+            }) as Box<dyn Error>
+        })?;
         stdin.write_all(dot.as_bytes())?;
     }
 
