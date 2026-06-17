@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/tagucci/moine/actions/workflows/ci.yml/badge.svg)](https://github.com/tagucci/moine/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/moine.svg)](https://pypi.org/project/moine/)
-[![crates.io](https://img.shields.io/crates/v/moine.svg)](https://crates.io/crates/moine)
+[![crates.io](https://badgen.net/crates/v/moine)](https://crates.io/crates/moine)
 [![docs.rs](https://img.shields.io/docsrs/moine.svg)](https://docs.rs/moine)
 
 `mòine` is a Python and Rust library for romanization-aware string comparison.
