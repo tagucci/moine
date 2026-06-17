@@ -648,11 +648,15 @@ impl PyJapaneseDictionary {
             let span_limit = effective_partial_span_limit(&query, max_span_chars, &query_paths);
             let query_lattice = Lattice::from_paths(query_paths.iter().map(String::as_str));
             partial_distance_alignment(&query, &text, span_limit, score_cutoff, |span, cutoff| {
-                let Some(span_lattice) =
-                    optional_ja_lattice(unidic_or_direct_lattice(span, &self.index, options))?
+                let Some(span_paths) =
+                    optional_ja_paths(unidic_or_direct_romaji_paths(span, &self.index, options))?
                 else {
                     return Ok(None);
                 };
+                if max_normalized_similarity(&query_paths, &span_paths) <= 0.0 {
+                    return Ok(None);
+                }
+                let span_lattice = Lattice::from_paths(span_paths.iter().map(String::as_str));
                 Ok(Some(distance_with_cutoff(
                     &query_lattice,
                     &span_lattice,
@@ -1133,11 +1137,15 @@ impl PyChineseDictionary {
             let span_limit = effective_partial_span_limit(&query, max_span_chars, &query_paths);
             let query_lattice = Lattice::from_paths(query_paths.iter().map(String::as_str));
             partial_distance_alignment(&query, &text, span_limit, score_cutoff, |span, cutoff| {
-                let Some(span_lattice) =
-                    optional_zh_lattice(zh_or_direct_lattice(span, &self.index, options))?
+                let Some(span_paths) =
+                    optional_zh_paths(zh_or_direct_pinyin_paths(span, &self.index, options))?
                 else {
                     return Ok(None);
                 };
+                if max_normalized_similarity(&query_paths, &span_paths) <= 0.0 {
+                    return Ok(None);
+                }
+                let span_lattice = Lattice::from_paths(span_paths.iter().map(String::as_str));
                 Ok(Some(distance_with_cutoff(
                     &query_lattice,
                     &span_lattice,
@@ -1680,26 +1688,10 @@ fn default_partial_span_limit(query_len: usize) -> usize {
     }
 }
 
-fn optional_ja_lattice(result: Result<Lattice, JaLatticeError>) -> PyResult<Option<Lattice>> {
-    match result {
-        Ok(lattice) => Ok(Some(lattice)),
-        Err(JaLatticeError::UnsupportedChar { .. }) => Ok(None),
-        Err(err) => Err(PyValueError::new_err(err.to_string())),
-    }
-}
-
 fn optional_ja_paths(result: Result<Vec<String>, JaLatticeError>) -> PyResult<Option<Vec<String>>> {
     match result {
         Ok(paths) => Ok(Some(paths)),
         Err(JaLatticeError::UnsupportedChar { .. }) => Ok(None),
-        Err(err) => Err(PyValueError::new_err(err.to_string())),
-    }
-}
-
-fn optional_zh_lattice(result: Result<Lattice, CnLatticeError>) -> PyResult<Option<Lattice>> {
-    match result {
-        Ok(lattice) => Ok(Some(lattice)),
-        Err(CnLatticeError::UnsupportedDirectInput { .. }) => Ok(None),
         Err(err) => Err(PyValueError::new_err(err.to_string())),
     }
 }
@@ -1813,6 +1805,9 @@ where
         let Some(score) = scorer(span.text, score_cutoff)? else {
             continue;
         };
+        if score <= 0.0 {
+            continue;
+        }
         if matches!(score_cutoff, Some(cutoff) if score < cutoff) {
             continue;
         }
@@ -2261,6 +2256,16 @@ mod tests {
                 1.0
             );
         });
+    }
+
+    #[test]
+    fn partial_ratio_alignment_skips_zero_similarity_spans() {
+        let alignment = partial_ratio_alignment("abc", "xxxx", 3, None, |span, _cutoff| {
+            Ok(Some(raw_normalized_similarity_pair("abc", span)))
+        })
+        .unwrap();
+
+        assert!(alignment.is_none());
     }
 
     #[test]

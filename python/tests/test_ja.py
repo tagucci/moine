@@ -162,6 +162,7 @@ def test_low_level_distance_helpers():
     assert moine.cdist(["abc"], []) == [[]]
     assert moine.partial_distance("abc", "xxabczz") == 0
     assert moine.partial_ratio("abc", "xxabczz") == 1.0
+    assert moine.partial_ratio("abc", "xxxx") == 0.0
     assert moine.partial_alignment("abc", "xxabczz") == moine.PartialAlignment(
         score=1.0,
         src_start=0,
@@ -169,6 +170,7 @@ def test_low_level_distance_helpers():
         dest_start=2,
         dest_end=5,
     )
+    assert moine.partial_alignment("abc", "xxxx") is None
     assert moine.partial_alignment(
         "abc",
         "xxabczz",
