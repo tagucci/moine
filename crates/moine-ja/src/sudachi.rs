@@ -3,7 +3,7 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 
-use crate::romaji::can_build_romaji_paths;
+use crate::romaji::can_build_romaji_reading;
 use crate::unidic::{
     field, insert_surface_reading, is_symbol_pos, lex_csv_reader, normalize_ascii_width,
     UnidicCsvError, UnidicReadingIndex,
@@ -163,7 +163,7 @@ fn can_reading_build_romaji(reading: &str, cache: &mut HashMap<String, bool>) ->
     if let Some(value) = cache.get(reading) {
         return *value;
     }
-    let value = can_build_romaji_paths(reading);
+    let value = can_build_romaji_reading(reading);
     cache.insert(reading.to_string(), value);
     value
 }

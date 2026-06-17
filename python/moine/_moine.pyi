@@ -6,6 +6,10 @@ _DistanceAlignmentTuple = tuple[int, int, int, int, int]
 _RatioAlignmentTuple = tuple[float, int, int, int, int]
 
 class JapaneseDictionary:
+    artifact_name: str | None
+    source_name: str | None
+    reading_field: str | None
+
     @staticmethod
     def load_payload(path: str, payload_format: str = "yaml") -> "JapaneseDictionary": ...
     @staticmethod
@@ -157,6 +161,10 @@ class JapaneseDictionary:
     ) -> list[list[float]]: ...
 
 class ChineseDictionary:
+    artifact_name: str | None
+    source_name: str | None
+    pinyin_view: str | None
+
     @staticmethod
     def load_payload(path: str, payload_format: str = "yaml") -> "ChineseDictionary": ...
     @staticmethod

@@ -263,6 +263,17 @@ pub(crate) fn run_unidic_artifact_release_checksums(
 pub(crate) fn run_unidic_artifact_runtime_measure(
     options: UnidicArtifactRuntimeMeasureCliOptions,
 ) -> Result<(), Box<dyn Error>> {
+    if options.iterations == 0 {
+        return Err(Box::new(CliError::InvalidArgumentValue {
+            name: "--iterations",
+            value: "0".to_string(),
+            expected: "a positive integer",
+        }));
+    }
+    if options.pairs.is_empty() {
+        return Err(Box::new(CliError::MissingArgument("--pair")));
+    }
+
     let loaded =
         load_unidic_artifact_bundle_for_runtime(&options.metadata, options.bundle_dir.as_deref())?;
     let dictionary_options = dictionary_options_from_metadata(&loaded.metadata);
@@ -320,6 +331,20 @@ pub(crate) fn run_unidic_artifact_runtime_measure(
     }
     let measured_comparisons = options.iterations * options.pairs.len();
     let compare_avg = compare_total.as_secs_f64() * 1000.0 / measured_comparisons as f64;
+    let compare_min = compare_min.ok_or_else(|| {
+        Box::new(CliError::InvalidArgumentValue {
+            name: "--iterations",
+            value: options.iterations.to_string(),
+            expected: "a positive integer",
+        }) as Box<dyn Error>
+    })?;
+    let compare_max = compare_max.ok_or_else(|| {
+        Box::new(CliError::InvalidArgumentValue {
+            name: "--iterations",
+            value: options.iterations.to_string(),
+            expected: "a positive integer",
+        }) as Box<dyn Error>
+    })?;
 
     println!("metadata: {}", loaded.metadata_path.display());
     println!("bundle: {}", loaded.bundle_dir.display());
@@ -367,14 +392,8 @@ pub(crate) fn run_unidic_artifact_runtime_measure(
     println!("first_compare_ms: {:.3}", duration_ms(first_compare));
     println!("compare_total_ms: {:.3}", duration_ms(compare_total));
     println!("compare_avg_ms: {compare_avg:.3}");
-    println!(
-        "compare_min_ms: {:.3}",
-        duration_ms(compare_min.expect("iterations should be non-zero"))
-    );
-    println!(
-        "compare_max_ms: {:.3}",
-        duration_ms(compare_max.expect("iterations should be non-zero"))
-    );
+    println!("compare_min_ms: {:.3}", duration_ms(compare_min));
+    println!("compare_max_ms: {:.3}", duration_ms(compare_max));
     println!("result_checksum: {result_checksum}");
     println!("first_pair:");
     println!("  left: {}", options.pairs[0].left);

@@ -53,6 +53,16 @@ install_demo_dictionary() {
   curl -fsSL \
     "https://github.com/tagucci/moine/releases/download/$release_tag/$artifact_name.tar.gz" \
     -o "$archive"
+  curl -fsSL \
+    "https://github.com/tagucci/moine/releases/download/$release_tag/SHA256SUMS" \
+    -o "$tmp_dir/SHA256SUMS"
+  awk -v asset="$artifact_name.tar.gz" '
+    $2 == asset || $2 ~ "/" asset "$" {
+      print $1 "  " asset
+      found = 1
+    }
+    END { exit found ? 0 : 1 }
+  ' "$tmp_dir/SHA256SUMS" | (cd "$tmp_dir" && shasum -a 256 -c -)
   tar -xzf "$archive" -C "$tmp_dir" \
     "$artifact_name/metadata.yaml" \
     "$artifact_name/$payload_name"

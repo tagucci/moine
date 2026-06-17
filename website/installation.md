@@ -46,7 +46,7 @@ moine list
 moine where
 ```
 
-The downloader verifies an archive checksum when one is configured, and always
+The public artifact downloader verifies the release archive checksum, then
 verifies bundle metadata and payload digests before installing an artifact.
 
 ## Existing Bundles

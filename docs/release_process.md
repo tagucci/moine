@@ -98,6 +98,7 @@ Each artifact release should include:
 
 - at least one compressed archive asset, with `*.tar.gz` as the default
   downloader target
+- `SHA256SUMS` covering the default `*.tar.gz` downloader asset
 - an unpacked bundle containing `metadata.yaml`, indexed payload, and license
   or attribution files
 - a short release note under `docs/releases/`
@@ -107,8 +108,10 @@ both `*.tar.gz` and `*.tar.zst` archives. Downloaders use the gzip assets by
 default; the zstd assets are provided for users who prefer faster local
 extraction.
 
-`SHA256SUMS` is optional. Generate it only for releases that need an external
-checksum manifest in addition to the bundle metadata and payload digests.
+`SHA256SUMS` is required for public artifact releases referenced by baked-in
+download specs. Downloaders verify the archive SHA-256 from this manifest before
+extracting the bundle, then verify metadata, payload digests, and license
+references after extraction.
 
 The release assets are a hard public-package gate. Before publishing PyPI or
 crates.io packages, and before pushing the package `vX.Y.Z` tag, create the
@@ -117,10 +120,13 @@ these exact names:
 
 - `unidic-cwj-202512-v0.1.1/moine-unidic-cwj-202512.tar.gz`
 - `unidic-cwj-202512-v0.1.1/moine-unidic-cwj-202512.tar.zst`
+- `unidic-cwj-202512-v0.1.1/SHA256SUMS`
 - `moine-sudachi-full-20260428-v0.2.0/moine-sudachi-full-20260428.tar.gz`
 - `moine-sudachi-full-20260428-v0.2.0/moine-sudachi-full-20260428.tar.zst`
+- `moine-sudachi-full-20260428-v0.2.0/SHA256SUMS`
 - `moine-cedict-20260520-v0.1.1/moine-cedict-20260520.tar.gz`
 - `moine-cedict-20260520-v0.1.1/moine-cedict-20260520.tar.zst`
+- `moine-cedict-20260520-v0.1.1/SHA256SUMS`
 
 These dictionary release tags are artifact-specific and do not need to match
 the package version when the generated payloads are unchanged. For the package

@@ -38,7 +38,7 @@ ARTIFACT_SPECS: dict[Language, ArtifactSpec] = {
         archive_url=(
             f"{_RELEASE_BASE_URL}/unidic-cwj-202512-v0.1.1/moine-unidic-cwj-202512.tar.gz"
         ),
-        checksum_url=None,
+        checksum_url=f"{_RELEASE_BASE_URL}/unidic-cwj-202512-v0.1.1/SHA256SUMS",
     ),
     "ja-unidic": ArtifactSpec(
         lang="ja-unidic",
@@ -48,7 +48,7 @@ ARTIFACT_SPECS: dict[Language, ArtifactSpec] = {
         archive_url=(
             f"{_RELEASE_BASE_URL}/unidic-cwj-202512-v0.1.1/moine-unidic-cwj-202512.tar.gz"
         ),
-        checksum_url=None,
+        checksum_url=f"{_RELEASE_BASE_URL}/unidic-cwj-202512-v0.1.1/SHA256SUMS",
     ),
     "ja-sudachi": ArtifactSpec(
         lang="ja-sudachi",
@@ -60,7 +60,7 @@ ARTIFACT_SPECS: dict[Language, ArtifactSpec] = {
             "moine-sudachi-full-20260428-v0.2.0/"
             "moine-sudachi-full-20260428.tar.gz"
         ),
-        checksum_url=None,
+        checksum_url=f"{_RELEASE_BASE_URL}/moine-sudachi-full-20260428-v0.2.0/SHA256SUMS",
     ),
     "zh": ArtifactSpec(
         lang="zh",
@@ -70,7 +70,7 @@ ARTIFACT_SPECS: dict[Language, ArtifactSpec] = {
         archive_url=(
             f"{_RELEASE_BASE_URL}/moine-cedict-20260520-v0.1.1/moine-cedict-20260520.tar.gz"
         ),
-        checksum_url=None,
+        checksum_url=f"{_RELEASE_BASE_URL}/moine-cedict-20260520-v0.1.1/SHA256SUMS",
     ),
 }
 
@@ -137,7 +137,7 @@ def _download_command(args: argparse.Namespace) -> int:
     spec = ARTIFACT_SPECS[lang]
     cache_dir = _cache_dir_arg(args.cache_dir)
     archive_url = args.url or spec.archive_url
-    checksum_url = args.checksum_url or spec.checksum_url
+    checksum_url = args.checksum_url or (spec.checksum_url if args.url is None else None)
     archive_name = Path(urllib.parse.urlparse(archive_url).path).name or spec.archive_name
 
     with tempfile.TemporaryDirectory(prefix="moine-download-") as tmp:
@@ -204,7 +204,8 @@ def _verify_extracted_bundle(lang: Language, metadata: Path) -> None:
     if lang in {"ja", "ja-unidic", "ja-sudachi"}:
         from ._moine import JapaneseDictionary
 
-        JapaneseDictionary.load_bundle(os.fspath(metadata))
+        dictionary = JapaneseDictionary.load_bundle(os.fspath(metadata))
+        _verify_japanese_download_identity(lang, dictionary)
         return
     if lang == "zh":
         from ._moine import ChineseDictionary
@@ -212,6 +213,34 @@ def _verify_extracted_bundle(lang: Language, metadata: Path) -> None:
         ChineseDictionary.load_bundle(os.fspath(metadata))
         return
     raise AssertionError("unreachable language branch")
+
+
+def _verify_japanese_download_identity(lang: Language, dictionary) -> None:
+    artifact_name = dictionary.artifact_name
+    source_name = dictionary.source_name
+    reading_field = dictionary.reading_field
+
+    if lang in {"ja", "ja-unidic"}:
+        if (
+            (artifact_name is not None and artifact_name.startswith("moine-sudachi"))
+            or source_name != "UniDic-CWJ"
+            or reading_field == "sudachi-reading"
+        ):
+            raise ValueError(
+                f"download {lang} requires a UniDic-CWJ artifact; "
+                f"got {artifact_name!r} from {source_name!r}"
+            )
+        return
+
+    if lang == "ja-sudachi" and (
+        (artifact_name is not None and artifact_name.startswith("moine-unidic"))
+        or source_name != "SudachiDict"
+        or reading_field != "sudachi-reading"
+    ):
+        raise ValueError(
+            "download ja-sudachi requires a SudachiDict artifact; "
+            f"got {artifact_name!r} from {source_name!r}"
+        )
 
 
 def _installed_metadata_paths(roots: list[Path]) -> list[Path]:

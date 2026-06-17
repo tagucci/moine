@@ -1,9 +1,10 @@
 #![allow(clippy::too_many_arguments)]
 
 use moine_core::{
-    damerau_distance as lattice_damerau_distance, distance as lattice_distance,
-    normalized_similarity_str, within_damerau_distance as lattice_within_damerau_distance,
-    within_distance as lattice_within_distance, Lattice,
+    normalized_similarity_str, try_damerau_distance as lattice_try_damerau_distance,
+    try_distance as lattice_try_distance,
+    try_within_damerau_distance as lattice_try_within_damerau_distance,
+    try_within_distance as lattice_try_within_distance, Lattice,
 };
 use moine_ja::{
     artifact_file_digest_path, normalized_similarity_with_unidic_index, unidic_or_direct_lattice,
@@ -31,20 +32,34 @@ type PyPartialDistanceAlignment = PyResult<Option<PartialDistanceAlignmentTuple>
 type PyPartialRatioAlignment = PyResult<Option<PartialRatioAlignmentTuple>>;
 
 #[pyfunction(signature = (left, right, *, score_cutoff = None))]
-fn distance(py: Python<'_>, left: &str, right: &str, score_cutoff: Option<usize>) -> usize {
+fn distance(
+    py: Python<'_>,
+    left: &str,
+    right: &str,
+    score_cutoff: Option<usize>,
+) -> PyResult<usize> {
     let left = left.to_owned();
     let right = right.to_owned();
     py.detach(move || raw_distance_pair_with_cutoff(&left, &right, score_cutoff))
 }
 
-fn raw_distance_pair_with_cutoff(left: &str, right: &str, score_cutoff: Option<usize>) -> usize {
+fn raw_distance_pair_with_cutoff(
+    left: &str,
+    right: &str,
+    score_cutoff: Option<usize>,
+) -> PyResult<usize> {
     let left_lattice = Lattice::from_paths([left]);
     let right_lattice = Lattice::from_paths([right]);
     distance_with_cutoff(&left_lattice, &right_lattice, score_cutoff)
 }
 
 #[pyfunction(signature = (left, right, *, score_cutoff = None))]
-fn damerau_distance(py: Python<'_>, left: &str, right: &str, score_cutoff: Option<usize>) -> usize {
+fn damerau_distance(
+    py: Python<'_>,
+    left: &str,
+    right: &str,
+    score_cutoff: Option<usize>,
+) -> PyResult<usize> {
     let left = left.to_owned();
     let right = right.to_owned();
     py.detach(move || raw_damerau_distance_pair_with_cutoff(&left, &right, score_cutoff))
@@ -54,7 +69,7 @@ fn raw_damerau_distance_pair_with_cutoff(
     left: &str,
     right: &str,
     score_cutoff: Option<usize>,
-) -> usize {
+) -> PyResult<usize> {
     let left_lattice = Lattice::from_paths([left]);
     let right_lattice = Lattice::from_paths([right]);
     damerau_distance_with_cutoff(&left_lattice, &right_lattice, score_cutoff)
@@ -116,7 +131,7 @@ fn _partial_distance_alignment(
                     &query_lattice,
                     &span_lattice,
                     cutoff,
-                )))
+                )?))
             },
         )
         .map(|alignment| alignment.map(PartialDistanceAlignment::into_tuple))
@@ -154,7 +169,7 @@ fn _cdist_distance(
     queries: Vec<String>,
     choices: Vec<String>,
     score_cutoff: Option<usize>,
-) -> Vec<Vec<usize>> {
+) -> PyResult<Vec<Vec<usize>>> {
     py.detach(move || {
         let query_lattices = string_lattices(&queries);
         let choice_lattices = string_lattices(&choices);
@@ -168,7 +183,7 @@ fn _cdist_damerau_distance(
     queries: Vec<String>,
     choices: Vec<String>,
     score_cutoff: Option<usize>,
-) -> Vec<Vec<usize>> {
+) -> PyResult<Vec<Vec<usize>>> {
     py.detach(move || {
         let query_lattices = string_lattices(&queries);
         let choice_lattices = string_lattices(&choices);
@@ -236,11 +251,7 @@ fn distance_paths(
     py.detach(move || {
         let left_lattice = lattice_from_paths(left_paths, "left_paths")?;
         let right_lattice = lattice_from_paths(right_paths, "right_paths")?;
-        Ok(distance_with_cutoff(
-            &left_lattice,
-            &right_lattice,
-            score_cutoff,
-        ))
+        distance_with_cutoff(&left_lattice, &right_lattice, score_cutoff)
     })
 }
 
@@ -254,11 +265,7 @@ fn damerau_distance_paths(
     py.detach(move || {
         let left_lattice = lattice_from_paths(left_paths, "left_paths")?;
         let right_lattice = lattice_from_paths(right_paths, "right_paths")?;
-        Ok(damerau_distance_with_cutoff(
-            &left_lattice,
-            &right_lattice,
-            score_cutoff,
-        ))
+        damerau_distance_with_cutoff(&left_lattice, &right_lattice, score_cutoff)
     })
 }
 
@@ -316,11 +323,8 @@ fn within_distance_paths(
     py.detach(move || {
         let left_lattice = lattice_from_paths(left_paths, "left_paths")?;
         let right_lattice = lattice_from_paths(right_paths, "right_paths")?;
-        Ok(lattice_within_distance(
-            &left_lattice,
-            &right_lattice,
-            threshold,
-        ))
+        lattice_try_within_distance(&left_lattice, &right_lattice, threshold)
+            .map_err(distance_error)
     })
 }
 
@@ -334,11 +338,8 @@ fn within_damerau_distance_paths(
     py.detach(move || {
         let left_lattice = lattice_from_paths(left_paths, "left_paths")?;
         let right_lattice = lattice_from_paths(right_paths, "right_paths")?;
-        Ok(lattice_within_damerau_distance(
-            &left_lattice,
-            &right_lattice,
-            threshold,
-        ))
+        lattice_try_within_damerau_distance(&left_lattice, &right_lattice, threshold)
+            .map_err(distance_error)
     })
 }
 
@@ -346,6 +347,9 @@ fn within_damerau_distance_paths(
 struct PyJapaneseDictionary {
     index: UnidicReadingIndex,
     default_options: DictionaryReadingOptions,
+    artifact_name: Option<String>,
+    source_name: Option<String>,
+    reading_field: Option<String>,
 }
 
 #[pymethods]
@@ -357,6 +361,9 @@ impl PyJapaneseDictionary {
         Ok(Self {
             index,
             default_options: DictionaryReadingOptions::default(),
+            artifact_name: None,
+            source_name: None,
+            reading_field: None,
         })
     }
 
@@ -373,12 +380,14 @@ impl PyJapaneseDictionary {
             .map_err(|err| PyValueError::new_err(err.to_string()))?;
         let metadata = serde_yaml::from_str::<UnidicArtifactMetadata>(&metadata_yaml)
             .map_err(|err| PyValueError::new_err(err.to_string()))?;
+        verify_metadata_header(&metadata)?;
         let bundle_dir = bundle_dir.map(PathBuf::from).unwrap_or_else(|| {
             metadata_path
                 .parent()
                 .unwrap_or(Path::new("."))
                 .to_path_buf()
         });
+        verify_metadata_license_references(&metadata, &bundle_dir)?;
         let payload_path = resolve_bundle_path(&bundle_dir, &metadata.payload.path)?;
         verify_metadata_file_digest(&metadata, &payload_path)?;
         let index = load_unidic_payload(&payload_path, &metadata.payload.format)?;
@@ -393,7 +402,25 @@ impl PyJapaneseDictionary {
         Ok(Self {
             index,
             default_options,
+            artifact_name: Some(metadata.artifact_name),
+            source_name: Some(metadata.source.name),
+            reading_field: Some(metadata.build.reading_field),
         })
+    }
+
+    #[getter]
+    fn artifact_name(&self) -> Option<String> {
+        self.artifact_name.clone()
+    }
+
+    #[getter]
+    fn source_name(&self) -> Option<String> {
+        self.source_name.clone()
+    }
+
+    #[getter]
+    fn reading_field(&self) -> Option<String> {
+        self.reading_field.clone()
     }
 
     #[pyo3(signature = (left, right, *, max_readings_per_segment = None, max_span_chars = None, max_paths = None, longest_only = None, score_cutoff = None))]
@@ -421,11 +448,7 @@ impl PyJapaneseDictionary {
                 .map_err(|err| PyValueError::new_err(err.to_string()))?;
             let right_lattice = unidic_or_direct_lattice(&right, &self.index, options)
                 .map_err(|err| PyValueError::new_err(err.to_string()))?;
-            Ok(distance_with_cutoff(
-                &left_lattice,
-                &right_lattice,
-                score_cutoff,
-            ))
+            distance_with_cutoff(&left_lattice, &right_lattice, score_cutoff)
         })
     }
 
@@ -454,11 +477,7 @@ impl PyJapaneseDictionary {
                 .map_err(|err| PyValueError::new_err(err.to_string()))?;
             let right_lattice = unidic_or_direct_lattice(&right, &self.index, options)
                 .map_err(|err| PyValueError::new_err(err.to_string()))?;
-            Ok(damerau_distance_with_cutoff(
-                &left_lattice,
-                &right_lattice,
-                score_cutoff,
-            ))
+            damerau_distance_with_cutoff(&left_lattice, &right_lattice, score_cutoff)
         })
     }
 
@@ -487,11 +506,8 @@ impl PyJapaneseDictionary {
                 .map_err(|err| PyValueError::new_err(err.to_string()))?;
             let right_lattice = unidic_or_direct_lattice(&right, &self.index, options)
                 .map_err(|err| PyValueError::new_err(err.to_string()))?;
-            Ok(lattice_within_distance(
-                &left_lattice,
-                &right_lattice,
-                threshold,
-            ))
+            lattice_try_within_distance(&left_lattice, &right_lattice, threshold)
+                .map_err(distance_error)
         })
     }
 
@@ -520,11 +536,8 @@ impl PyJapaneseDictionary {
                 .map_err(|err| PyValueError::new_err(err.to_string()))?;
             let right_lattice = unidic_or_direct_lattice(&right, &self.index, options)
                 .map_err(|err| PyValueError::new_err(err.to_string()))?;
-            Ok(lattice_within_damerau_distance(
-                &left_lattice,
-                &right_lattice,
-                threshold,
-            ))
+            lattice_try_within_damerau_distance(&left_lattice, &right_lattice, threshold)
+                .map_err(distance_error)
         })
     }
 
@@ -635,16 +648,20 @@ impl PyJapaneseDictionary {
             let span_limit = effective_partial_span_limit(&query, max_span_chars, &query_paths);
             let query_lattice = Lattice::from_paths(query_paths.iter().map(String::as_str));
             partial_distance_alignment(&query, &text, span_limit, score_cutoff, |span, cutoff| {
-                let Some(span_lattice) =
-                    optional_ja_lattice(unidic_or_direct_lattice(span, &self.index, options))?
+                let Some(span_paths) =
+                    optional_ja_paths(unidic_or_direct_romaji_paths(span, &self.index, options))?
                 else {
                     return Ok(None);
                 };
+                if max_normalized_similarity(&query_paths, &span_paths) <= 0.0 {
+                    return Ok(None);
+                }
+                let span_lattice = Lattice::from_paths(span_paths.iter().map(String::as_str));
                 Ok(Some(distance_with_cutoff(
                     &query_lattice,
                     &span_lattice,
                     cutoff,
-                )))
+                )?))
             })
             .map(|alignment| alignment.map(PartialDistanceAlignment::into_tuple))
         })
@@ -712,11 +729,7 @@ impl PyJapaneseDictionary {
         py.detach(move || {
             let query_lattices = ja_lattices(&queries, &self.index, options)?;
             let choice_lattices = ja_lattices(&choices, &self.index, options)?;
-            Ok(cdist_distance_matrix(
-                &query_lattices,
-                &choice_lattices,
-                score_cutoff,
-            ))
+            cdist_distance_matrix(&query_lattices, &choice_lattices, score_cutoff)
         })
     }
 
@@ -741,11 +754,7 @@ impl PyJapaneseDictionary {
         py.detach(move || {
             let query_lattices = ja_lattices(&queries, &self.index, options)?;
             let choice_lattices = ja_lattices(&choices, &self.index, options)?;
-            Ok(cdist_damerau_distance_matrix(
-                &query_lattices,
-                &choice_lattices,
-                score_cutoff,
-            ))
+            cdist_damerau_distance_matrix(&query_lattices, &choice_lattices, score_cutoff)
         })
     }
 
@@ -829,6 +838,9 @@ impl PyJapaneseDictionary {
 struct PyChineseDictionary {
     index: ZhReadingIndex,
     default_options: PinyinReadingOptions,
+    artifact_name: Option<String>,
+    source_name: Option<String>,
+    pinyin_view: Option<String>,
 }
 
 #[pymethods]
@@ -840,6 +852,9 @@ impl PyChineseDictionary {
         Ok(Self {
             index,
             default_options: PinyinReadingOptions::default(),
+            artifact_name: None,
+            source_name: None,
+            pinyin_view: None,
         })
     }
 
@@ -863,6 +878,7 @@ impl PyChineseDictionary {
                 .unwrap_or(Path::new("."))
                 .to_path_buf()
         });
+        verify_zh_metadata_license_references(&metadata, &bundle_dir)?;
         let payload_path = resolve_bundle_path(&bundle_dir, &metadata.payload.path)?;
         verify_zh_metadata_file_digest(&metadata, &payload_path)?;
         let index = load_zh_payload(&payload_path, &metadata.payload.format)?;
@@ -877,7 +893,25 @@ impl PyChineseDictionary {
         Ok(Self {
             index,
             default_options,
+            artifact_name: Some(metadata.artifact_name),
+            source_name: Some(metadata.source.name),
+            pinyin_view: Some(metadata.build.pinyin_view),
         })
+    }
+
+    #[getter]
+    fn artifact_name(&self) -> Option<String> {
+        self.artifact_name.clone()
+    }
+
+    #[getter]
+    fn source_name(&self) -> Option<String> {
+        self.source_name.clone()
+    }
+
+    #[getter]
+    fn pinyin_view(&self) -> Option<String> {
+        self.pinyin_view.clone()
     }
 
     #[pyo3(signature = (left, right, *, max_readings_per_segment = None, max_span_chars = None, max_paths = None, longest_only = None, score_cutoff = None))]
@@ -905,11 +939,7 @@ impl PyChineseDictionary {
                 .map_err(|err| PyValueError::new_err(err.to_string()))?;
             let right_lattice = zh_or_direct_lattice(&right, &self.index, options)
                 .map_err(|err| PyValueError::new_err(err.to_string()))?;
-            Ok(distance_with_cutoff(
-                &left_lattice,
-                &right_lattice,
-                score_cutoff,
-            ))
+            distance_with_cutoff(&left_lattice, &right_lattice, score_cutoff)
         })
     }
 
@@ -938,11 +968,7 @@ impl PyChineseDictionary {
                 .map_err(|err| PyValueError::new_err(err.to_string()))?;
             let right_lattice = zh_or_direct_lattice(&right, &self.index, options)
                 .map_err(|err| PyValueError::new_err(err.to_string()))?;
-            Ok(damerau_distance_with_cutoff(
-                &left_lattice,
-                &right_lattice,
-                score_cutoff,
-            ))
+            damerau_distance_with_cutoff(&left_lattice, &right_lattice, score_cutoff)
         })
     }
 
@@ -971,11 +997,8 @@ impl PyChineseDictionary {
                 .map_err(|err| PyValueError::new_err(err.to_string()))?;
             let right_lattice = zh_or_direct_lattice(&right, &self.index, options)
                 .map_err(|err| PyValueError::new_err(err.to_string()))?;
-            Ok(lattice_within_distance(
-                &left_lattice,
-                &right_lattice,
-                threshold,
-            ))
+            lattice_try_within_distance(&left_lattice, &right_lattice, threshold)
+                .map_err(distance_error)
         })
     }
 
@@ -1004,11 +1027,8 @@ impl PyChineseDictionary {
                 .map_err(|err| PyValueError::new_err(err.to_string()))?;
             let right_lattice = zh_or_direct_lattice(&right, &self.index, options)
                 .map_err(|err| PyValueError::new_err(err.to_string()))?;
-            Ok(lattice_within_damerau_distance(
-                &left_lattice,
-                &right_lattice,
-                threshold,
-            ))
+            lattice_try_within_damerau_distance(&left_lattice, &right_lattice, threshold)
+                .map_err(distance_error)
         })
     }
 
@@ -1117,16 +1137,20 @@ impl PyChineseDictionary {
             let span_limit = effective_partial_span_limit(&query, max_span_chars, &query_paths);
             let query_lattice = Lattice::from_paths(query_paths.iter().map(String::as_str));
             partial_distance_alignment(&query, &text, span_limit, score_cutoff, |span, cutoff| {
-                let Some(span_lattice) =
-                    optional_zh_lattice(zh_or_direct_lattice(span, &self.index, options))?
+                let Some(span_paths) =
+                    optional_zh_paths(zh_or_direct_pinyin_paths(span, &self.index, options))?
                 else {
                     return Ok(None);
                 };
+                if max_normalized_similarity(&query_paths, &span_paths) <= 0.0 {
+                    return Ok(None);
+                }
+                let span_lattice = Lattice::from_paths(span_paths.iter().map(String::as_str));
                 Ok(Some(distance_with_cutoff(
                     &query_lattice,
                     &span_lattice,
                     cutoff,
-                )))
+                )?))
             })
             .map(|alignment| alignment.map(PartialDistanceAlignment::into_tuple))
         })
@@ -1194,11 +1218,7 @@ impl PyChineseDictionary {
         py.detach(move || {
             let query_lattices = zh_lattices(&queries, &self.index, options)?;
             let choice_lattices = zh_lattices(&choices, &self.index, options)?;
-            Ok(cdist_distance_matrix(
-                &query_lattices,
-                &choice_lattices,
-                score_cutoff,
-            ))
+            cdist_distance_matrix(&query_lattices, &choice_lattices, score_cutoff)
         })
     }
 
@@ -1223,11 +1243,7 @@ impl PyChineseDictionary {
         py.detach(move || {
             let query_lattices = zh_lattices(&queries, &self.index, options)?;
             let choice_lattices = zh_lattices(&choices, &self.index, options)?;
-            Ok(cdist_damerau_distance_matrix(
-                &query_lattices,
-                &choice_lattices,
-                score_cutoff,
-            ))
+            cdist_damerau_distance_matrix(&query_lattices, &choice_lattices, score_cutoff)
         })
     }
 
@@ -1363,6 +1379,39 @@ fn zh_path_sets(
         .collect()
 }
 
+fn verify_metadata_header(metadata: &UnidicArtifactMetadata) -> PyResult<()> {
+    if metadata.schema_version != 1 {
+        return Err(PyValueError::new_err(format!(
+            "unsupported Japanese metadata schema version {}",
+            metadata.schema_version
+        )));
+    }
+    if metadata.artifact_type != "moine.unidic.reading-index" {
+        return Err(PyValueError::new_err(format!(
+            "unsupported Japanese artifact type {:?}",
+            metadata.artifact_type
+        )));
+    }
+    Ok(())
+}
+
+fn verify_metadata_license_references(
+    metadata: &UnidicArtifactMetadata,
+    bundle_dir: &Path,
+) -> PyResult<()> {
+    for reference in &metadata.license.references {
+        let path = resolve_bundle_path(bundle_dir, &reference.path)?;
+        if !path.is_file() {
+            return Err(PyValueError::new_err(format!(
+                "missing license reference {} at {}",
+                reference.label,
+                path.display()
+            )));
+        }
+    }
+    Ok(())
+}
+
 fn verify_metadata_file_digest(
     metadata: &UnidicArtifactMetadata,
     payload_path: &Path,
@@ -1442,6 +1491,23 @@ fn verify_zh_metadata_header(metadata: &ZhArtifactMetadata) -> PyResult<()> {
             "unsupported zh artifact type {:?}",
             metadata.artifact_type
         )));
+    }
+    Ok(())
+}
+
+fn verify_zh_metadata_license_references(
+    metadata: &ZhArtifactMetadata,
+    bundle_dir: &Path,
+) -> PyResult<()> {
+    for reference in &metadata.license.references {
+        let path = resolve_bundle_path(bundle_dir, &reference.path)?;
+        if !path.is_file() {
+            return Err(PyValueError::new_err(format!(
+                "missing license reference {} at {}",
+                reference.label,
+                path.display()
+            )));
+        }
     }
     Ok(())
 }
@@ -1622,26 +1688,10 @@ fn default_partial_span_limit(query_len: usize) -> usize {
     }
 }
 
-fn optional_ja_lattice(result: Result<Lattice, JaLatticeError>) -> PyResult<Option<Lattice>> {
-    match result {
-        Ok(lattice) => Ok(Some(lattice)),
-        Err(JaLatticeError::UnsupportedChar { .. }) => Ok(None),
-        Err(err) => Err(PyValueError::new_err(err.to_string())),
-    }
-}
-
 fn optional_ja_paths(result: Result<Vec<String>, JaLatticeError>) -> PyResult<Option<Vec<String>>> {
     match result {
         Ok(paths) => Ok(Some(paths)),
         Err(JaLatticeError::UnsupportedChar { .. }) => Ok(None),
-        Err(err) => Err(PyValueError::new_err(err.to_string())),
-    }
-}
-
-fn optional_zh_lattice(result: Result<Lattice, CnLatticeError>) -> PyResult<Option<Lattice>> {
-    match result {
-        Ok(lattice) => Ok(Some(lattice)),
-        Err(CnLatticeError::UnsupportedDirectInput { .. }) => Ok(None),
         Err(err) => Err(PyValueError::new_err(err.to_string())),
     }
 }
@@ -1755,6 +1805,9 @@ where
         let Some(score) = scorer(span.text, score_cutoff)? else {
             continue;
         };
+        if score <= 0.0 {
+            continue;
+        }
         if matches!(score_cutoff, Some(cutoff) if score < cutoff) {
             continue;
         }
@@ -1888,7 +1941,7 @@ fn cdist_distance_matrix(
     query_lattices: &[Lattice],
     choice_lattices: &[Lattice],
     score_cutoff: Option<usize>,
-) -> Vec<Vec<usize>> {
+) -> PyResult<Vec<Vec<usize>>> {
     query_lattices
         .iter()
         .map(|query| {
@@ -1904,7 +1957,7 @@ fn cdist_damerau_distance_matrix(
     query_lattices: &[Lattice],
     choice_lattices: &[Lattice],
     score_cutoff: Option<usize>,
-) -> Vec<Vec<usize>> {
+) -> PyResult<Vec<Vec<usize>>> {
     query_lattices
         .iter()
         .map(|query| {
@@ -1967,24 +2020,34 @@ fn distance_with_cutoff(
     left_lattice: &Lattice,
     right_lattice: &Lattice,
     score_cutoff: Option<usize>,
-) -> usize {
-    match score_cutoff {
-        Some(cutoff) if !lattice_within_distance(left_lattice, right_lattice, cutoff) => cutoff + 1,
-        _ => lattice_distance(left_lattice, right_lattice),
+) -> PyResult<usize> {
+    if let Some(cutoff) = score_cutoff {
+        if !lattice_try_within_distance(left_lattice, right_lattice, cutoff)
+            .map_err(distance_error)?
+        {
+            return Ok(cutoff + 1);
+        }
     }
+    lattice_try_distance(left_lattice, right_lattice).map_err(distance_error)
 }
 
 fn damerau_distance_with_cutoff(
     left_lattice: &Lattice,
     right_lattice: &Lattice,
     score_cutoff: Option<usize>,
-) -> usize {
-    match score_cutoff {
-        Some(cutoff) if !lattice_within_damerau_distance(left_lattice, right_lattice, cutoff) => {
-            cutoff + 1
+) -> PyResult<usize> {
+    if let Some(cutoff) = score_cutoff {
+        if !lattice_try_within_damerau_distance(left_lattice, right_lattice, cutoff)
+            .map_err(distance_error)?
+        {
+            return Ok(cutoff + 1);
         }
-        _ => lattice_damerau_distance(left_lattice, right_lattice),
     }
+    lattice_try_damerau_distance(left_lattice, right_lattice).map_err(distance_error)
+}
+
+fn distance_error(err: moine_core::DistanceError) -> PyErr {
+    PyValueError::new_err(err.to_string())
 }
 
 fn apply_similarity_cutoff(score: f64, score_cutoff: Option<f64>) -> PyResult<f64> {
@@ -2057,10 +2120,10 @@ mod tests {
     fn python_distance_matches_linear_lattice_distance() {
         Python::initialize();
         Python::attach(|py| {
-            assert_eq!(distance(py, "abc", "adc", None), 1);
-            assert_eq!(distance(py, "abc", "adc", Some(0)), 1);
-            assert_eq!(damerau_distance(py, "abc", "acb", None), 1);
-            assert_eq!(damerau_distance(py, "abc", "acb", Some(0)), 1);
+            assert_eq!(distance(py, "abc", "adc", None).unwrap(), 1);
+            assert_eq!(distance(py, "abc", "adc", Some(0)).unwrap(), 1);
+            assert_eq!(damerau_distance(py, "abc", "acb", None).unwrap(), 1);
+            assert_eq!(damerau_distance(py, "abc", "acb", Some(0)).unwrap(), 1);
             assert_close(
                 normalized_similarity(py, "abc", "adc", None).unwrap(),
                 2.0 / 3.0,
@@ -2193,6 +2256,16 @@ mod tests {
                 1.0
             );
         });
+    }
+
+    #[test]
+    fn partial_ratio_alignment_skips_zero_similarity_spans() {
+        let alignment = partial_ratio_alignment("abc", "xxxx", 3, None, |span, _cutoff| {
+            Ok(Some(raw_normalized_similarity_pair("abc", span)))
+        })
+        .unwrap();
+
+        assert!(alignment.is_none());
     }
 
     #[test]

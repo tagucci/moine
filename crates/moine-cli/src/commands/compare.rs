@@ -6,7 +6,7 @@ use std::io::Write as _;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use moine_core::{distance_with_trace, try_distance_with_trace, DistanceTrace, Lattice, Symbol};
+use moine_core::{try_distance_with_trace, DistanceTrace, Lattice, Symbol};
 use moine_ja::{
     compare_with_overrides, compare_with_unidic_index, unidic_or_direct_lattice,
     DictionaryReadingOptions, DictionaryReadingStats, JapaneseDistance, OverrideDictionary,
@@ -90,7 +90,10 @@ pub(crate) fn run_chinese_compare(options: ChineseCompareOptions) -> Result<(), 
     )?;
     let left_lattice = zh_or_direct_lattice(&options.left, &index, options.reading_options)?;
     let right_lattice = zh_or_direct_lattice(&options.right, &index, options.reading_options)?;
-    let trace = distance_with_trace(&left_lattice, &right_lattice);
+    let (trace, trace_error) = match try_distance_with_trace(&left_lattice, &right_lattice) {
+        Ok(trace) => (Some(trace), None),
+        Err(err) => (None, Some(err.to_string())),
+    };
     let left_expansion = query_pinyin_expansion(&options.left, &index, options.reading_options);
     let right_expansion = query_pinyin_expansion(&options.right, &index, options.reading_options);
     let (source_label, source_path) = options.source.label();
@@ -118,7 +121,12 @@ pub(crate) fn run_chinese_compare(options: ChineseCompareOptions) -> Result<(), 
     println!("surface_damerau:     {}", distances.surface_damerau);
     print_pinyin_query_stats("left_expansion", &left_expansion);
     print_pinyin_query_stats("right_expansion", &right_expansion);
-    print_chinese_lattice_result("cn_pinyin_lattice", distances, &trace);
+    print_chinese_lattice_result(
+        "cn_pinyin_lattice",
+        distances,
+        trace.as_ref(),
+        trace_error.as_deref(),
+    );
 
     Ok(())
 }
@@ -270,6 +278,12 @@ pub(crate) fn run_unidic_readings(options: UnidicReadingsOptions) -> Result<(), 
 }
 
 pub(crate) fn run_compare(options: CompareOptions) -> Result<(), Box<dyn Error>> {
+    if !has_japanese_comparison_method(&options) {
+        return Err(Box::new(CliError::MissingArgument(
+            "--overrides/--lex-csv/--sudachi-lex-csv/--artifact-payload/--artifact-metadata",
+        )));
+    }
+
     let mut romaji_lattice_data = None;
 
     let override_result = if let Some(overrides_path) = &options.overrides {
@@ -278,7 +292,10 @@ pub(crate) fn run_compare(options: CompareOptions) -> Result<(), Box<dyn Error>>
         let distances = compare_with_overrides(&options.left, &options.right, &overrides)?;
         let left_lattice = overrides.romaji_lattice(&options.left)?;
         let right_lattice = overrides.romaji_lattice(&options.right)?;
-        let trace = distance_with_trace(&left_lattice, &right_lattice);
+        let (trace, trace_error) = match try_distance_with_trace(&left_lattice, &right_lattice) {
+            Ok(trace) => (Some(trace), None),
+            Err(err) => (None, Some(err.to_string())),
+        };
         if options.romaji_lattice.is_some() {
             romaji_lattice_data = Some(RomajiLatticeData {
                 left_input: options.left.clone(),
@@ -286,11 +303,11 @@ pub(crate) fn run_compare(options: CompareOptions) -> Result<(), Box<dyn Error>>
                 left_lattice: left_lattice.clone(),
                 right_lattice: right_lattice.clone(),
                 distance: distances.lattice,
-                trace: Some(trace.clone()),
-                trace_error: None,
+                trace: trace.clone(),
+                trace_error: trace_error.clone(),
             });
         }
-        Some((distances, trace))
+        Some((distances, trace, trace_error))
     } else {
         None
     };
@@ -341,10 +358,9 @@ pub(crate) fn run_compare(options: CompareOptions) -> Result<(), Box<dyn Error>>
                 dictionary_options,
             )
         } else {
-            let payload = options
-                .artifact_payload
-                .as_ref()
-                .expect("artifact payload should be present");
+            let Some(payload) = options.artifact_payload.as_ref() else {
+                return Err(Box::new(CliError::MissingArgument("--artifact-payload")));
+            };
             (
                 load_artifact_payload_by_format(
                     Path::new(payload),
@@ -393,9 +409,13 @@ pub(crate) fn run_compare(options: CompareOptions) -> Result<(), Box<dyn Error>>
 
     let surface_distances = override_result
         .as_ref()
-        .map(|(distances, _)| *distances)
+        .map(|(distances, _, _)| *distances)
         .or_else(|| dict_result.as_ref().map(|result| result.distances))
-        .expect("comparison method should be present");
+        .ok_or_else(|| {
+            Box::new(CliError::MissingArgument(
+                "--overrides/--lex-csv/--sudachi-lex-csv/--artifact-payload/--artifact-metadata",
+            )) as Box<dyn Error>
+        })?;
 
     println!("left:  {}", options.left);
     println!("right: {}", options.right);
@@ -406,8 +426,13 @@ pub(crate) fn run_compare(options: CompareOptions) -> Result<(), Box<dyn Error>>
     );
     println!("surface_damerau:     {}", surface_distances.surface_damerau);
 
-    if let Some((distances, trace)) = override_result {
-        print_lattice_result("ja_override_lattice", distances, Some(&trace), None);
+    if let Some((distances, trace, trace_error)) = override_result {
+        print_lattice_result(
+            "ja_override_lattice",
+            distances,
+            trace.as_ref(),
+            trace_error.as_deref(),
+        );
     }
 
     if let Some(result) = dict_result {
@@ -432,9 +457,13 @@ pub(crate) fn run_compare(options: CompareOptions) -> Result<(), Box<dyn Error>>
     }
 
     if let Some(path) = &options.romaji_lattice {
-        let data = romaji_lattice_data
-            .as_ref()
-            .expect("comparison method should provide lattices for graph output");
+        let data = romaji_lattice_data.as_ref().ok_or_else(|| {
+            Box::new(CliError::IncompatibleArgument {
+                arg: "--romaji-lattice",
+                source: "comparison method",
+                expected: "use a Japanese comparison method that can build romaji lattices",
+            }) as Box<dyn Error>
+        })?;
         let dot = romaji_lattice_dot(data);
         match options.output_format {
             RomajiLatticeOutputFormat::Dot => write_output_file(Path::new(path), &dot)?,
@@ -450,6 +479,14 @@ pub(crate) fn run_compare(options: CompareOptions) -> Result<(), Box<dyn Error>>
     }
 
     Ok(())
+}
+
+fn has_japanese_comparison_method(options: &CompareOptions) -> bool {
+    options.overrides.is_some()
+        || options.lex_csv.is_some()
+        || options.sudachi_lex_csv.is_some()
+        || options.artifact_payload.is_some()
+        || options.artifact_metadata.is_some()
 }
 
 pub(crate) fn print_lattice_result(
@@ -665,15 +702,20 @@ pub(crate) fn print_pinyin_stats(label: &str, stats: &PinyinReadingStats) {
 pub(crate) fn print_chinese_lattice_result(
     label: &str,
     distances: ChineseDistance,
-    trace: &moine_core::DistanceTrace,
+    trace: Option<&moine_core::DistanceTrace>,
+    trace_error: Option<&str>,
 ) {
     println!();
     println!("{label}: {}", distances.lattice);
     println!("{label}_damerau: {}", distances.lattice_damerau);
     println!("{label}_combined: {}", distances.combined);
-    println!("{label}_best_path:");
-    println!("  left:  {}", symbols_to_string(&trace.left_symbols()));
-    println!("  right: {}", symbols_to_string(&trace.right_symbols()));
+    if let Some(trace) = trace {
+        println!("{label}_best_path:");
+        println!("  left:  {}", symbols_to_string(&trace.left_symbols()));
+        println!("  right: {}", symbols_to_string(&trace.right_symbols()));
+    } else if let Some(error) = trace_error {
+        println!("{label}_best_path: unavailable ({error})");
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -808,7 +850,13 @@ pub(crate) fn write_romaji_lattice_graph_with_dot_command(
         })?;
 
     {
-        let stdin = child.stdin.as_mut().expect("dot stdin should be piped");
+        let stdin = child.stdin.as_mut().ok_or_else(|| {
+            Box::new(CliError::CommandFailed {
+                command: format!("{dot_command} -T{graphviz_format}"),
+                status: None,
+                stderr: "failed to open Graphviz stdin".to_string(),
+            }) as Box<dyn Error>
+        })?;
         stdin.write_all(dot.as_bytes())?;
     }
 
