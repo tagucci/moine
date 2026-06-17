@@ -354,6 +354,20 @@ g,1,2,3,記号,文字,*,*,*,*,ジー,g,g,ジー,g,ジー,外
     }
 
     #[test]
+    fn hybrid_lattice_allows_dictionary_text_with_japanese_punctuation() {
+        let csv = "\
+印刷,1,2,3,名詞,普通名詞,一般,*,*,*,インサツ,印刷,印刷,インサツ,印刷,インサツ,漢
+";
+        let index = UnidicReadingIndex::from_lex_csv_reader(csv.as_bytes()).unwrap();
+        let lattice =
+            unidic_or_direct_lattice("印刷。", &index, DictionaryReadingOptions::default())
+                .unwrap();
+        let trace = moine_core::distance_with_trace(&lattice, &Lattice::from_paths(["insatu。"]));
+
+        assert_eq!(trace.distance, 0);
+    }
+
+    #[test]
     fn hybrid_lattice_allows_direct_prefix_and_dictionary_tail() {
         let csv = "\
 具,1,2,3,名詞,普通名詞,一般,*,*,*,グ,具,具,グ,具,グ,漢

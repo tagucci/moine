@@ -362,7 +362,7 @@ build:
   max_readings_per_surface: null
   exclude_ascii_surfaces: true
   exclude_symbol_pos: true
-  entries: 1
+  entries: 2
 query_defaults:
   max_span_chars: 8
   max_paths: 128
@@ -380,6 +380,9 @@ entries:
 - surface: モイニャ
   readings:
   - モイニャ
+- surface: です
+  readings:
+  - デス
 "#;
 
     const ZH_METADATA: &str = r#"
@@ -443,6 +446,11 @@ entries:
 
         let kana_result = demo.compare("ja", "もいにゃ", "モイニャ").unwrap();
         assert_eq!(kana_result.lattice_path_edit_distance(), 0);
+
+        let punctuated_result = demo
+            .compare("ja", "モイニャです。", "もいにゃです。")
+            .unwrap();
+        assert_eq!(punctuated_result.lattice_path_edit_distance(), 0);
     }
 
     #[test]
@@ -465,6 +473,11 @@ entries:
         let result = demo.compare("zh", "weishiji", "威士忌").unwrap();
         assert_eq!(result.levenshtein_distance(), 8);
         assert_eq!(result.lattice_path_edit_distance(), 0);
+
+        let punctuated_result = demo
+            .compare("zh", "weishiji，威士忌。", "威士忌，weishiji。")
+            .unwrap();
+        assert_eq!(punctuated_result.lattice_path_edit_distance(), 0);
     }
 
     #[test]

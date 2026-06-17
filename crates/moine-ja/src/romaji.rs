@@ -88,8 +88,14 @@ pub fn romaji_lattice(input: &str) -> Result<Lattice, JaLatticeError> {
     RomajiVariantTable.build_lattice(input)
 }
 
-pub(crate) fn can_build_romaji_paths(input: &str) -> bool {
-    segment(input)
+pub(crate) fn can_build_direct_romaji_path(input: &str) -> bool {
+    segment(input, RomajiSegmentMode::Surface)
+        .and_then(|units| validate_romaji_units(&units))
+        .is_ok()
+}
+
+pub(crate) fn can_build_romaji_reading(input: &str) -> bool {
+    segment(input, RomajiSegmentMode::Reading)
         .and_then(|units| validate_romaji_units(&units))
         .is_ok()
 }
@@ -102,7 +108,7 @@ where
 {
     let mut paths = Vec::new();
     for reading in readings {
-        paths.extend(romaji_symbol_paths(reading.as_ref())?);
+        paths.extend(romaji_symbol_paths_from_reading(reading.as_ref())?);
     }
     if paths.is_empty() {
         return Err(JaLatticeError::EmptyReadings);
@@ -110,19 +116,19 @@ where
     Ok(Lattice::from_symbol_paths_compact(paths))
 }
 
-pub(crate) fn romaji_paths_from_reading_segments<I, P, S>(
+pub(crate) fn romaji_paths_from_segmented_readings<I, P, S>(
     reading_paths: I,
 ) -> Result<Vec<String>, JaLatticeError>
 where
     I: IntoIterator<Item = P>,
-    P: IntoIterator<Item = S>,
+    P: IntoIterator<Item = (S, RomajiSegmentMode)>,
     S: AsRef<str>,
 {
     let mut paths = Vec::new();
     for reading_path in reading_paths {
         let mut units = Vec::new();
-        for segment_reading in reading_path {
-            units.extend(segment(segment_reading.as_ref())?);
+        for (segment_reading, mode) in reading_path {
+            units.extend(segment(segment_reading.as_ref(), mode)?);
         }
         paths.extend(romaji_paths_from_units(&units)?);
     }
@@ -132,19 +138,19 @@ where
     Ok(paths)
 }
 
-pub(crate) fn romaji_symbol_paths_from_reading_segments<I, P, S>(
+pub(crate) fn romaji_symbol_paths_from_segmented_readings<I, P, S>(
     reading_paths: I,
 ) -> Result<Vec<Vec<Symbol>>, JaLatticeError>
 where
     I: IntoIterator<Item = P>,
-    P: IntoIterator<Item = S>,
+    P: IntoIterator<Item = (S, RomajiSegmentMode)>,
     S: AsRef<str>,
 {
     let mut paths = Vec::new();
     for reading_path in reading_paths {
         let mut units = Vec::new();
-        for segment_reading in reading_path {
-            units.extend(segment(segment_reading.as_ref())?);
+        for (segment_reading, mode) in reading_path {
+            units.extend(segment(segment_reading.as_ref(), mode)?);
         }
         paths.extend(romaji_symbol_paths_from_units(&units)?);
     }
@@ -165,10 +171,17 @@ impl RomajiVariantTable {
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum Unit {
     Ascii(char),
+    NeutralLiteral(char),
     Kana(String),
 }
 
-fn segment(input: &str) -> Result<Vec<Unit>, JaLatticeError> {
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum RomajiSegmentMode {
+    Surface,
+    Reading,
+}
+
+fn segment(input: &str, mode: RomajiSegmentMode) -> Result<Vec<Unit>, JaLatticeError> {
     let chars = input.chars().collect::<Vec<_>>();
     let mut units = Vec::new();
     let mut i = 0;
@@ -183,6 +196,12 @@ fn segment(input: &str) -> Result<Vec<Unit>, JaLatticeError> {
 
         if ch.is_ascii() {
             units.push(Unit::Ascii(ch));
+            i += 1;
+            continue;
+        }
+
+        if mode == RomajiSegmentMode::Surface && is_neutral_literal(ch) {
+            units.push(Unit::NeutralLiteral(ch));
             i += 1;
             continue;
         }
@@ -213,14 +232,45 @@ fn normalize_whitespace_char(ch: char) -> Option<char> {
     ch.is_whitespace().then_some(' ')
 }
 
+fn is_neutral_literal(ch: char) -> bool {
+    is_fullwidth_ascii_punctuation(ch)
+        || matches!(
+            ch,
+            '\u{00b7}'
+                | '\u{2010}'..='\u{2015}'
+                | '\u{2018}'..='\u{201f}'
+                | '\u{2026}'
+                | '\u{3001}'..='\u{3002}'
+                | '\u{3008}'..='\u{3011}'
+                | '\u{3014}'..='\u{301f}'
+                | '\u{3030}'
+                | '\u{30fb}'
+        )
+}
+
+fn is_fullwidth_ascii_punctuation(ch: char) -> bool {
+    matches!(
+        ch,
+        '\u{ff01}'..='\u{ff0f}'
+            | '\u{ff1a}'..='\u{ff20}'
+            | '\u{ff3b}'..='\u{ff40}'
+            | '\u{ff5b}'..='\u{ff65}'
+    )
+}
+
 /// Expands kana or ASCII romaji input into explicit romaji paths.
 pub fn romaji_paths(input: &str) -> Result<Vec<String>, JaLatticeError> {
-    let units = segment(input)?;
+    let units = segment(input, RomajiSegmentMode::Surface)?;
     romaji_paths_from_units(&units)
 }
 
 fn romaji_symbol_paths(input: &str) -> Result<Vec<Vec<Symbol>>, JaLatticeError> {
-    let units = segment(input)?;
+    let units = segment(input, RomajiSegmentMode::Surface)?;
+    romaji_symbol_paths_from_units(&units)
+}
+
+fn romaji_symbol_paths_from_reading(input: &str) -> Result<Vec<Vec<Symbol>>, JaLatticeError> {
+    let units = segment(input, RomajiSegmentMode::Reading)?;
     romaji_symbol_paths_from_units(&units)
 }
 
@@ -256,7 +306,7 @@ fn validate_romaji_units(units: &[Unit]) -> Result<(), JaLatticeError> {
 
 fn validate_variants_for_unit(unit: &Unit) -> Result<(), JaLatticeError> {
     match unit {
-        Unit::Ascii(_) => Ok(()),
+        Unit::Ascii(_) | Unit::NeutralLiteral(_) => Ok(()),
         Unit::Kana(unit) => variants_for(unit)
             .map(|_| ())
             .ok_or_else(|| JaLatticeError::MissingVariant { unit: unit.clone() }),
@@ -343,7 +393,7 @@ fn romaji_symbol_paths_from_units(units: &[Unit]) -> Result<Vec<Vec<Symbol>>, Ja
 
 fn variants_for_unit(unit: &Unit) -> Result<Vec<String>, JaLatticeError> {
     match unit {
-        Unit::Ascii(ch) => Ok(vec![ch.to_string()]),
+        Unit::Ascii(ch) | Unit::NeutralLiteral(ch) => Ok(vec![ch.to_string()]),
         Unit::Kana(unit) => variants_for(unit)
             .ok_or_else(|| JaLatticeError::MissingVariant { unit: unit.clone() })
             .map(to_owned_variants),
@@ -685,6 +735,23 @@ mod tests {
     }
 
     #[test]
+    fn surface_neutral_literals_are_kept_as_literal_symbols() {
+        let left = romaji_lattice("はい，「です」。").expect("punctuated kana should build");
+        let right = Lattice::from_paths(["hai，「desu」。"]);
+
+        assert_eq!(distance(&left, &right), 0);
+    }
+
+    #[test]
+    fn middle_dot_readings_stay_out_of_strict_romaji_reading_validation() {
+        // This is a converter policy, not a claim about dictionary validity:
+        // Sudachi can contain readings with separators, but dictionary-reading
+        // separators need a separate normalize/preserve/drop decision.
+        assert!(can_build_direct_romaji_path("ジョニー・ウォーカー"));
+        assert!(!can_build_romaji_reading("ジョニー・ウォーカー"));
+    }
+
+    #[test]
     fn ascii_consonant_can_combine_with_small_kana() {
         let lattice = romaji_lattice("kょう").expect("mixed small kana input should build");
 
@@ -714,7 +781,8 @@ mod tests {
     fn support_check_does_not_expand_all_romaji_paths() {
         let input = "シー".repeat(32);
 
-        assert!(can_build_romaji_paths(&input));
+        assert!(can_build_direct_romaji_path(&input));
+        assert!(can_build_romaji_reading(&input));
     }
 
     #[test]

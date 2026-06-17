@@ -61,8 +61,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use pinyin::{
-    can_build_direct_pinyin_path, direct_pinyin_lattice, normalize_artifact_reading,
-    normalize_direct_ascii,
+    can_build_direct_pinyin_input, direct_pinyin_lattice, normalize_artifact_reading,
+    normalize_direct_pinyin_input,
 };
 pub use pinyin::{normalize_pinyin, pinyin_lattice_from_reading_paths};
 
@@ -119,6 +119,17 @@ pub struct PinyinReadingSegment {
     pub surface: String,
     /// Pinyin reading selected for the segment.
     pub reading: String,
+    /// Whether the segment came from the dictionary or direct pinyin fallback.
+    pub source: PinyinReadingSegmentSource,
+}
+
+/// Source of one Chinese pinyin reading-path segment.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PinyinReadingSegmentSource {
+    /// Segment was backed by a dictionary entry.
+    Dictionary,
+    /// Segment was copied from direct pinyin/punctuation fallback.
+    Direct,
 }
 
 /// One complete segmentation and joined pinyin reading for an input string.
@@ -1279,9 +1290,9 @@ impl CedictReadingIndex {
 
     /// Expands `text` into pinyin reading paths with direct fallback segments.
     ///
-    /// Dictionary matches are preferred, but ASCII pinyin spans can pass
-    /// through directly so mixed dictionary/direct input can still form a full
-    /// path.
+    /// Dictionary matches are preferred, but direct pinyin and punctuation
+    /// spans can pass through directly so mixed dictionary/direct input can
+    /// still form a full path.
     pub fn hybrid_reading_paths(
         &self,
         text: &str,
@@ -1337,7 +1348,8 @@ impl CedictReadingIndex {
     /// Builds a pinyin lattice with dictionary readings and direct fallback.
     ///
     /// This is the preferred lattice builder for mixed Chinese text where
-    /// direct pinyin spans may appear beside CC-CEDICT-backed surfaces.
+    /// direct pinyin or punctuation spans may appear beside
+    /// CC-CEDICT-backed surfaces.
     pub fn hybrid_pinyin_lattice(
         &self,
         text: &str,
@@ -1418,6 +1430,7 @@ impl CedictReadingIndex {
                         segments.push(PinyinReadingSegment {
                             surface: surface.to_string(),
                             reading: surface_reading.to_string(),
+                            source: PinyinReadingSegmentSource::Dictionary,
                         });
                         segments.extend(suffix.segments.iter().cloned());
 
@@ -1455,7 +1468,7 @@ impl CedictReadingIndex {
                     if !suffix_paths[end].is_empty() {
                         stats.direct_fallback_spans += 1;
                         let surface = &text[boundaries[start]..boundaries[end]];
-                        let reading = normalize_direct_ascii(surface);
+                        let reading = normalize_direct_pinyin_input(surface);
                         for suffix in &suffix_paths[end] {
                             stats.candidate_combinations += 1;
                             let mut joined =
@@ -1467,6 +1480,7 @@ impl CedictReadingIndex {
                             segments.push(PinyinReadingSegment {
                                 surface: surface.to_string(),
                                 reading: reading.clone(),
+                                source: PinyinReadingSegmentSource::Direct,
                             });
                             segments.extend(suffix.segments.iter().cloned());
 
@@ -1574,8 +1588,8 @@ pub fn zh_or_direct_pinyin_paths(
     index: &ZhReadingIndex,
     options: PinyinReadingOptions,
 ) -> Result<Vec<String>, CnLatticeError> {
-    if can_build_direct_pinyin_path(input) {
-        return Ok(vec![normalize_direct_ascii(input)]);
+    if can_build_direct_pinyin_input(input) {
+        return Ok(vec![normalize_direct_pinyin_input(input)]);
     }
 
     let paths = index
@@ -1654,7 +1668,7 @@ fn direct_fallback_end(
     let mut end = start;
     while end < char_len {
         let surface = &text[boundaries[start]..boundaries[end + 1]];
-        if !can_build_direct_pinyin_path(surface) {
+        if !can_build_direct_pinyin_input(surface) {
             break;
         }
         end += 1;
@@ -2183,6 +2197,7 @@ mod tests {
             vec![PinyinReadingSegment {
                 surface: "威士忌".to_string(),
                 reading: "weishiji".to_string(),
+                source: PinyinReadingSegmentSource::Dictionary,
             }]
         );
         assert_eq!(expansion.stats.longest_match_pruned_spans, 1);
@@ -2196,6 +2211,16 @@ mod tests {
 
         assert_eq!(paths.len(), 1);
         assert_eq!(paths[0].joined_reading, "weishiji");
+    }
+
+    #[test]
+    fn hybrid_paths_allow_dictionary_text_with_chinese_punctuation() {
+        let cedict = "威士忌 威士忌 [Wei1 shi4 ji4] /whisky/\n";
+        let index = CedictReadingIndex::from_cedict_reader(cedict.as_bytes()).unwrap();
+        let paths = index.hybrid_reading_paths("威士忌。", PinyinReadingOptions::default());
+
+        assert_eq!(paths.len(), 1);
+        assert_eq!(paths[0].joined_reading, "weishiji。");
     }
 
     #[test]
@@ -2213,6 +2238,21 @@ mod tests {
         assert_eq!(distances.lattice, 0);
         assert_eq!(distances.lattice_damerau, 0);
         assert!(distances.surface_damerau > distances.lattice);
+    }
+
+    #[test]
+    fn compare_handles_chinese_punctuation_between_pinyin_and_dictionary_spans() {
+        let cedict = "威士忌 威士忌 [Wei1 shi4 ji4] /whisky/\n";
+        let index = CedictReadingIndex::from_cedict_reader(cedict.as_bytes()).unwrap();
+        let distances = compare_with_cedict_index(
+            "weishiji，威士忌。",
+            "威士忌，weishiji。",
+            &index,
+            PinyinReadingOptions::default(),
+        )
+        .unwrap();
+
+        assert_eq!(distances.lattice, 0);
     }
 
     #[test]
