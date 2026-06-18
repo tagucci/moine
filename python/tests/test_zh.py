@@ -4,6 +4,7 @@ import moine
 import pytest
 from moine.zh import (
     Dictionary,
+    combined_distance,
     damerau_distance,
     distance,
     extract,
@@ -125,6 +126,13 @@ def test_zh_bundle_helpers_use_metadata_defaults(tmp_path):
     assert dictionary.distance("bunahabe", "布納哈本", score_cutoff=0) == 1
     assert dictionary.damerau_distance("weishiji", "wieshiji") == 1
     assert dictionary.damerau_distance("weishiji", "wieshiji", score_cutoff=0) == 1
+    assert dictionary.combined_distance("weishiji", "威士忌") == 0
+    assert dictionary.combined_distance("weishiji", "wieshiji") == 1
+    assert dictionary.combined_distance("weishiji", "wieshiji", score_cutoff=0) == 1
+    with pytest.raises(TypeError, match="score_cutoff must be an int"):
+        dictionary.combined_distance("weishiji", "wieshiji", score_cutoff=True)
+    with pytest.raises(ValueError, match="score_cutoff"):
+        dictionary.combined_distance("weishiji", "wieshiji", score_cutoff=-1)
     assert dictionary.within_distance("布納哈奔", "布納哈本", 0)
     assert not dictionary.within_distance("bunahabe", "布納哈本", 0)
     assert dictionary.within_damerau_distance("weishiji", "wieshiji", 1)
@@ -134,6 +142,10 @@ def test_zh_bundle_helpers_use_metadata_defaults(tmp_path):
     assert dictionary.ratio("weishiji", "威士忌") == 1.0
     assert distance("weishiji", "威士忌", dictionary=dictionary) == 0
     assert damerau_distance("weishiji", "wieshiji", dictionary=dictionary) == 1
+    assert combined_distance("weishiji", "威士忌", dictionary=dictionary) == 0
+    assert combined_distance("weishiji", "wieshiji", dictionary=dictionary) == 1
+    with pytest.raises(TypeError, match="score_cutoff must be an int"):
+        combined_distance("weishiji", "wieshiji", dictionary=dictionary, score_cutoff=0.5)
     assert normalized_similarity("weishiji", "威士忌", dictionary=dictionary) == 1.0
     assert normalized_distance("weishiji", "威士忌", dictionary=dictionary) == 0.0
     assert ratio("weishiji", "威士忌", dictionary=dictionary) == 1.0
@@ -166,11 +178,16 @@ def test_top_level_cdist_zh_uses_default_dictionary(tmp_path):
             for query in queries
         ]
         assert moine.damerau_distance("weishiji", "wieshiji", lang="zh") == 1
+        assert moine.combined_distance("weishiji", "wieshiji", lang="zh") == 1
         assert moine.cdist(queries, choices, lang="zh") == [
             [moine.distance(query, choice, lang="zh") for choice in choices] for query in queries
         ]
         assert moine.cdist(queries, choices, lang="zh", metric="damerau_distance") == [
             [moine.damerau_distance(query, choice, lang="zh") for choice in choices]
+            for query in queries
+        ]
+        assert moine.cdist(queries, choices, lang="zh", metric="combined_distance") == [
+            [moine.combined_distance(query, choice, lang="zh") for choice in choices]
             for query in queries
         ]
         assert moine.cdist(queries, choices, lang="zh", metric="normalized_distance") == [
@@ -238,6 +255,13 @@ def test_zh_process_extract_distance_and_ratio(tmp_path):
         scorer_kwargs={"max_paths": 128},
         score_cutoff=0,
     ) == [("布納哈本", 0, "traditional"), ("布那哈本", 0, "simplified")]
+    assert process.extract_one(
+        "weishiji",
+        ["wieshiji"],
+        dictionary=dictionary,
+        scorer="combined_distance",
+        score_cutoff=1,
+    ) == ("wieshiji", 1, 0)
     with pytest.raises(TypeError, match="score_cutoff must be an int"):
         process.extract(
             "weishiji",

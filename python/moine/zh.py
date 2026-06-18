@@ -69,6 +69,30 @@ def damerau_distance(
     )
 
 
+def combined_distance(
+    left: str,
+    right: str,
+    *,
+    dictionary: ChineseDictionary,
+    max_readings_per_segment: int | None = None,
+    max_span_chars: int | None = None,
+    max_paths: int | None = None,
+    longest_only: bool | None = None,
+    score_cutoff: int | None = None,
+) -> int:
+    """Compute min(surface Damerau-Levenshtein, Chinese pinyin LPED)."""
+
+    return dictionary.combined_distance(
+        left,
+        right,
+        max_readings_per_segment=max_readings_per_segment,
+        max_span_chars=max_span_chars,
+        max_paths=max_paths,
+        longest_only=longest_only,
+        score_cutoff=score_cutoff,
+    )
+
+
 def within_distance(
     left: str,
     right: str,
@@ -192,6 +216,7 @@ def ratio(
 _SCORERS = ScorerFunctions(
     distance=distance,
     damerau_distance=damerau_distance,
+    combined_distance=combined_distance,
     normalized_distance=normalized_distance,
     normalized_similarity=normalized_similarity,
     ratio=ratio,
@@ -246,6 +271,7 @@ def extract_one(
 __all__ = [
     "ChineseDictionary",
     "Dictionary",
+    "combined_distance",
     "damerau_distance",
     "distance",
     "extract",

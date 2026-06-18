@@ -389,17 +389,18 @@ cargo run -q -p moine-cli -- chinese-compare \
 
 `score_cutoff` follows the RapidFuzz-style contract:
 
-- `distance` and `damerau_distance` return `score_cutoff + 1` when the distance
-  exceeds the cutoff;
+- `distance`, `damerau_distance`, and `combined_distance` return
+  `score_cutoff + 1` when the distance exceeds the cutoff;
 - `normalized_distance` returns `1.0` when the normalized distance exceeds the
   cutoff;
 - `normalized_similarity` and `ratio` return `0.0` when the score is below the
   cutoff.
 
 `moine.cdist(...)` supports plain string scoring and dictionary-backed
-`distance`, `damerau_distance`, `normalized_distance`, `normalized_similarity`,
-and `ratio`. It returns a plain `list[list[int | float]]`. NumPy/dtype
-handling, arbitrary `processor` callbacks, `score_hint`, and `workers` are
+`distance`, `damerau_distance`, `combined_distance`, `normalized_distance`,
+`normalized_similarity`, and `ratio`. It returns a plain
+`list[list[int | float]]`. NumPy/dtype handling, arbitrary `processor`
+callbacks, `score_hint`, and `workers` are
 intentionally outside the initial API.
 
 `moine.partial_ratio(...)`, `partial_distance(...)`, and
@@ -420,6 +421,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let dictionary = moine::zh::load_bundle("dist/moine-cedict-20260520")?;
 
     assert_eq!(dictionary.distance("weishiji", "威士忌")?, 0);
+    assert_eq!(dictionary.combined_distance("weishiji", "wieshiji")?, 1);
 
     Ok(())
 }

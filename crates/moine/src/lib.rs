@@ -233,6 +233,22 @@ pub mod ja {
                 .map_err(JaLatticeError::from)
         }
 
+        /// Computes the combined Japanese distance used by the paper-style
+        /// scorer.
+        ///
+        /// This is the minimum of surface Damerau-Levenshtein distance and
+        /// Levenshtein-style LPED. It intentionally does not include
+        /// lattice-side Damerau-Levenshtein distance.
+        pub fn combined_distance(&self, left: &str, right: &str) -> Result<usize, JaLatticeError> {
+            let left_lattice = unidic_or_direct_lattice(left, &self.index, self.options)?;
+            let right_lattice = unidic_or_direct_lattice(right, &self.index, self.options)?;
+            let lattice = moine_core::try_distance(&left_lattice, &right_lattice)
+                .map_err(JaLatticeError::from)?;
+            let surface_damerau = moine_core::try_damerau_levenshtein_str(left, right)
+                .map_err(JaLatticeError::from)?;
+            Ok(surface_damerau.min(lattice))
+        }
+
         /// Computes normalized Japanese reading-space similarity.
         pub fn normalized_similarity(
             &self,
@@ -607,6 +623,22 @@ pub mod zh {
                 .map_err(CnLatticeError::from)
         }
 
+        /// Computes the combined Chinese distance used by the paper-style
+        /// scorer.
+        ///
+        /// This is the minimum of surface Damerau-Levenshtein distance and
+        /// Levenshtein-style LPED. It intentionally does not include
+        /// lattice-side Damerau-Levenshtein distance.
+        pub fn combined_distance(&self, left: &str, right: &str) -> Result<usize, CnLatticeError> {
+            let left_lattice = zh_or_direct_lattice(left, &self.index, self.options)?;
+            let right_lattice = zh_or_direct_lattice(right, &self.index, self.options)?;
+            let lattice = moine_core::try_distance(&left_lattice, &right_lattice)
+                .map_err(CnLatticeError::from)?;
+            let surface_damerau = moine_core::try_damerau_levenshtein_str(left, right)
+                .map_err(CnLatticeError::from)?;
+            Ok(surface_damerau.min(lattice))
+        }
+
         /// Computes normalized Chinese pinyin-space similarity.
         pub fn normalized_similarity(
             &self,
@@ -882,6 +914,65 @@ license:
     }
 
     #[test]
+    fn ja_load_bundle_loads_metadata_defaults() {
+        let temp = temp_dir("moine-rust-ja-bundle-test");
+        let bundle = temp.join("moine-unidic-test");
+        fs::create_dir_all(&bundle).unwrap();
+
+        let payload = ja::UnidicReadingIndexPayload {
+            schema_version: 1,
+            payload_type: "moine.unidic.reading-index.surface-readings".to_string(),
+            entries: vec![ja::UnidicReadingIndexPayloadEntry {
+                surface: "印刷".to_string(),
+                readings: vec!["インサツ".to_string()],
+            }],
+        };
+        let index = ja::UnidicReadingIndex::from_artifact_payload(payload).unwrap();
+        fs::write(
+            bundle.join("readings.yaml"),
+            serde_yaml::to_string(&index.artifact_payload()).unwrap(),
+        )
+        .unwrap();
+        let metadata = index.artifact_metadata(ja::UnidicArtifactMetadataOptions {
+            artifact_name: "moine-unidic-test".to_string(),
+            generator: "test".to_string(),
+            payload_file_name: "readings.yaml".to_string(),
+            payload_format: "yaml.surface-readings.v1".to_string(),
+            source_name: "UniDic-CWJ".to_string(),
+            source_version: "test".to_string(),
+            source_lex_csv: "lex.csv".to_string(),
+            index_options: ja::UnidicIndexOptions::default(),
+            query_defaults: ja::DictionaryReadingOptions {
+                max_paths: 128,
+                longest_match_only: true,
+                ..ja::DictionaryReadingOptions::default()
+            },
+            license: ja::UnidicArtifactLicense {
+                selected_license: "BSD-3-Clause".to_string(),
+                references: vec![],
+            },
+        });
+        fs::write(
+            bundle.join("metadata.yaml"),
+            serde_yaml::to_string(&metadata).unwrap(),
+        )
+        .unwrap();
+
+        let loaded = ja::load_bundle(&bundle).unwrap();
+
+        assert_eq!(loaded.distance("いんさt", "印刷").unwrap(), 1);
+        assert_eq!(loaded.combined_distance("いんさt", "印刷").unwrap(), 1);
+        assert_eq!(
+            loaded
+                .combined_distance("マトリッツォ", "マリトッツォ")
+                .unwrap(),
+            1
+        );
+
+        fs::remove_dir_all(temp).unwrap();
+    }
+
+    #[test]
     fn zh_load_bundle_reports_unsupported_payload_format_variant() {
         let temp = temp_dir("moine-rust-zh-bundle-error-test");
         let bundle = temp.join("moine-cedict-test");
@@ -990,8 +1081,10 @@ license:
         let loaded = zh::load_bundle(&bundle).unwrap();
 
         assert_eq!(loaded.distance("weishiji", "威士忌").unwrap(), 0);
+        assert_eq!(loaded.combined_distance("weishiji", "威士忌").unwrap(), 0);
         assert_eq!(loaded.distance("布納哈本", "布納哈本").unwrap(), 0);
         assert_eq!(loaded.damerau_distance("weishiji", "wieshiji").unwrap(), 1);
+        assert_eq!(loaded.combined_distance("weishiji", "wieshiji").unwrap(), 1);
 
         fs::remove_dir_all(temp).unwrap();
     }

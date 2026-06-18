@@ -8,4 +8,13 @@ uv.lock
 python/**/*.so
 python/**/__pycache__/
 
+unidic-cwj-*/
+unidic-cwj-*_full/
+sudachi-raw-*/
+sudachi_test/
+vibrato/
+daachorse/
+python-daachorse/
+cedict_1_0_ts_utf-8_mdbg.*
+
 .DS_Store

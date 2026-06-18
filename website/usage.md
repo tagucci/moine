@@ -87,8 +87,8 @@ scores = moine.cdist(
 ```
 
 `cdist` returns a plain `list[list[int | float]]`. It supports `distance`,
-`damerau_distance`, `normalized_distance`, `normalized_similarity`, and
-`ratio`.
+`damerau_distance`, `combined_distance`, `normalized_distance`,
+`normalized_similarity`, and `ratio`.
 
 ## Partial Matching
 
@@ -140,8 +140,8 @@ CC-CEDICT-derived artifact.
 
 `score_cutoff` follows the RapidFuzz-style contract:
 
-- `distance` and `damerau_distance` return `score_cutoff + 1` when the distance
-  exceeds the cutoff.
+- `distance`, `damerau_distance`, and `combined_distance` return
+  `score_cutoff + 1` when the distance exceeds the cutoff.
 - `normalized_distance` returns `1.0` when the normalized distance exceeds the
   cutoff.
 - `normalized_similarity` and `ratio` return `0.0` when the score is below the

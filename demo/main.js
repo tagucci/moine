@@ -26,7 +26,6 @@ const els = {
   compare: document.querySelector("#compare"),
   status: document.querySelector("#status"),
   levenshtein: document.querySelector("#levenshtein"),
-  damerau: document.querySelector("#damerau"),
   lped: document.querySelector("#lped"),
   examples: document.querySelectorAll("[data-lang]"),
 };
@@ -40,13 +39,11 @@ function setStatus(message) {
 
 function setResults(result) {
   els.levenshtein.value = result.levenshteinDistance;
-  els.damerau.value = result.damerauLevenshteinDistance;
   els.lped.value = result.latticePathEditDistance;
 }
 
 function clearResults() {
   els.levenshtein.value = "-";
-  els.damerau.value = "-";
   els.lped.value = "-";
 }
 
