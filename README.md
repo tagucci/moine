@@ -49,6 +49,8 @@ ambiguity in input sequences.
   [CC-CEDICT](https://cc-cedict.org/wiki/)-derived no-tone pinyin artifacts.
 - Plain string Levenshtein-compatible distance helpers.
 - Lattice-aware Damerau-Levenshtein distance for adjacent transpositions.
+- Combined `min(surface Damerau-Levenshtein, LPED)` scorer for paper-style
+  reranking.
 - Normalized similarity / `ratio` helpers in `0.0..=1.0`.
 - [RapidFuzz](https://github.com/rapidfuzz/RapidFuzz)-inspired APIs such as
   `cdist` and partial matching helpers.
@@ -169,7 +171,8 @@ print(ranked)
 ```
 
 Score interpretation is intentionally simple: `distance=0` means the best
-reading paths are identical, distance metrics are smaller-is-better, `ratio`
+reading paths are identical, `combined_distance` is the minimum of surface
+Damerau-Levenshtein and LPED, distance metrics are smaller-is-better, `ratio`
 and `normalized_similarity` are in `0.0..=1.0` and larger-is-better, and
 `score_cutoff` filters in the RapidFuzz style.
 

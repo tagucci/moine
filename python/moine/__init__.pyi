@@ -10,6 +10,7 @@ Language = Literal["ja", "ja-unidic", "ja-sudachi", "zh"]
 Metric = Literal[
     "distance",
     "damerau_distance",
+    "combined_distance",
     "normalized_distance",
     "normalized_similarity",
     "ratio",
@@ -147,6 +148,33 @@ def damerau_distance(
 ) -> int: ...
 @overload
 def damerau_distance(
+    left: str,
+    right: str,
+    *,
+    dictionary: _Dictionary,
+    score_cutoff: int | None = None,
+    max_readings_per_segment: int | None = None,
+    max_span_chars: int | None = None,
+    max_paths: int | None = None,
+    longest_only: bool | None = None,
+) -> int: ...
+@overload
+def combined_distance(left: str, right: str, *, score_cutoff: int | None = None) -> int: ...
+@overload
+def combined_distance(
+    left: str,
+    right: str,
+    *,
+    lang: Language,
+    dictionary: _Dictionary | None = None,
+    score_cutoff: int | None = None,
+    max_readings_per_segment: int | None = None,
+    max_span_chars: int | None = None,
+    max_paths: int | None = None,
+    longest_only: bool | None = None,
+) -> int: ...
+@overload
+def combined_distance(
     left: str,
     right: str,
     *,

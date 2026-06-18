@@ -5,6 +5,7 @@ import moine
 import pytest
 from moine.ja import (
     Dictionary,
+    combined_distance,
     damerau_distance,
     distance,
     extract,
@@ -132,6 +133,14 @@ def test_low_level_distance_helpers():
     assert moine.distance("abc", "adc", score_cutoff=0) == 1
     assert moine.damerau_distance("abc", "acb") == 1
     assert moine.damerau_distance("abc", "acb", score_cutoff=0) == 1
+    assert moine.combined_distance("abc", "acb") == 1
+    assert moine.combined_distance("abc", "acb", score_cutoff=0) == 1
+    with pytest.raises(TypeError, match="score_cutoff must be an int"):
+        moine.combined_distance("abc", "acb", score_cutoff=True)
+    with pytest.raises(TypeError, match="score_cutoff must be an int"):
+        moine.combined_distance("abc", "acb", score_cutoff=0.5)
+    with pytest.raises(ValueError, match="score_cutoff"):
+        moine.combined_distance("abc", "acb", score_cutoff=-1)
     assert moine.normalized_similarity("abc", "adc") == pytest.approx(2 / 3)
     assert moine.normalized_similarity("abc", "adc", score_cutoff=0.8) == 0.0
     assert moine.normalized_distance("abc", "adc") == pytest.approx(1 / 3)
@@ -151,6 +160,7 @@ def test_low_level_distance_helpers():
     assert not moine.within_distance_paths(["insatu"], ["insat"], 0)
     assert moine.cdist(["abc", "axc"], ["abc", "acb"]) == [[0, 2], [1, 2]]
     assert moine.cdist(["abc"], ["axc"], metric="damerau_distance") == [[1]]
+    assert moine.cdist(["abc"], ["acb"], metric="combined_distance") == [[1]]
     assert moine.cdist(["abc"], ["abc", "adc"], metric="ratio") == [[1.0, pytest.approx(2 / 3)]]
     assert moine.cdist(
         ["abc"],
@@ -237,6 +247,13 @@ def test_ja_bundle_helpers_use_metadata_defaults(tmp_path):
     assert dictionary.distance("いんさt", "印刷", score_cutoff=0) == 1
     assert dictionary.damerau_distance("モイネ", "モニエ") == 1
     assert dictionary.damerau_distance("モイネ", "モニエ", score_cutoff=0) == 1
+    assert dictionary.combined_distance("いんさt", "印刷") == 1
+    assert dictionary.combined_distance("マトリッツォ", "マリトッツォ") == 1
+    assert dictionary.combined_distance("マトリッツォ", "マリトッツォ", score_cutoff=0) == 1
+    with pytest.raises(TypeError, match="score_cutoff must be an int"):
+        dictionary.combined_distance("マトリッツォ", "マリトッツォ", score_cutoff=True)
+    with pytest.raises(ValueError, match="score_cutoff"):
+        dictionary.combined_distance("マトリッツォ", "マリトッツォ", score_cutoff=-1)
     assert dictionary.within_distance("いんさt", "印刷", 1)
     assert not dictionary.within_distance("いんさt", "印刷", 0)
     assert dictionary.within_damerau_distance("モイネ", "モニエ", 1)
@@ -250,6 +267,14 @@ def test_ja_bundle_helpers_use_metadata_defaults(tmp_path):
     assert distance("いんさt", "印刷", dictionary=dictionary, score_cutoff=0) == 1
     assert damerau_distance("モイネ", "モニエ", dictionary=dictionary) == 1
     assert damerau_distance("モイネ", "モニエ", dictionary=dictionary, score_cutoff=0) == 1
+    assert combined_distance("いんさt", "印刷", dictionary=dictionary) == 1
+    assert combined_distance("マトリッツォ", "マリトッツォ", dictionary=dictionary) == 1
+    assert (
+        combined_distance("マトリッツォ", "マリトッツォ", dictionary=dictionary, score_cutoff=0)
+        == 1
+    )
+    with pytest.raises(TypeError, match="score_cutoff must be an int"):
+        combined_distance("マトリッツォ", "マリトッツォ", dictionary=dictionary, score_cutoff=0.5)
     assert normalized_similarity("いんさt", "印刷", dictionary=dictionary) == pytest.approx(6 / 7)
     assert normalized_distance("いんさt", "印刷", dictionary=dictionary) == pytest.approx(1 / 7)
     assert ratio("いんさt", "印刷", dictionary=dictionary) == pytest.approx(6 / 7)
@@ -264,6 +289,10 @@ def test_ja_bundle_helpers_use_metadata_defaults(tmp_path):
 
 
 def test_top_level_ja_dictionary_loading_and_defaults(tmp_path, monkeypatch):
+    monkeypatch.delenv("MOINE_JA_DICTIONARY", raising=False)
+    monkeypatch.delenv("MOINE_DICTIONARIES_PATH", raising=False)
+    monkeypatch.setenv("MOINE_CACHE_DIR", str(tmp_path / "empty-cache"))
+
     metadata_path = write_test_bundle(tmp_path)
 
     dictionary = moine.load_dict(lang="ja", path=tmp_path)
@@ -271,6 +300,10 @@ def test_top_level_ja_dictionary_loading_and_defaults(tmp_path, monkeypatch):
     assert isinstance(dictionary, moine.JapaneseDictionary)
     assert moine.distance("いんさt", "印刷", lang="ja", dictionary=dictionary) == 1
     assert moine.damerau_distance("モイネ", "モニエ", lang="ja", dictionary=dictionary) == 1
+    assert (
+        moine.combined_distance("マトリッツォ", "マリトッツォ", lang="ja", dictionary=dictionary)
+        == 1
+    )
     assert moine.normalized_similarity(
         "いんさt", "印刷", lang="ja", dictionary=dictionary
     ) == pytest.approx(6 / 7)
@@ -283,6 +316,7 @@ def test_top_level_ja_dictionary_loading_and_defaults(tmp_path, monkeypatch):
         assert moine.get_default_dictionary(lang="ja") is dictionary
         assert moine.distance("いんさt", "印刷", lang="ja") == 1
         assert moine.damerau_distance("モイネ", "モニエ", lang="ja") == 1
+        assert moine.combined_distance("マトリッツォ", "マリトッツォ", lang="ja") == 1
         assert moine.ratio("いんさt", "印刷", lang="ja") == pytest.approx(6 / 7)
     finally:
         moine.clear_default_dictionary(lang="ja")
@@ -322,6 +356,10 @@ def test_top_level_cdist_ja_uses_default_dictionary(tmp_path):
         ]
         assert moine.cdist(queries, choices, lang="ja", metric="damerau_distance") == [
             [moine.damerau_distance(query, choice, lang="ja") for choice in choices]
+            for query in queries
+        ]
+        assert moine.cdist(queries, choices, lang="ja", metric="combined_distance") == [
+            [moine.combined_distance(query, choice, lang="ja") for choice in choices]
             for query in queries
         ]
         assert moine.cdist(queries, choices, lang="ja", metric="ratio") == [
@@ -506,6 +544,13 @@ def test_ja_process_extract_distance_and_ratio(tmp_path):
         ["acb"],
         dictionary=dictionary,
         scorer="damerau_distance",
+        score_cutoff=1,
+    ) == ("acb", 1, 0)
+    assert process.extract_one(
+        "abc",
+        ["acb"],
+        dictionary=dictionary,
+        scorer="combined_distance",
         score_cutoff=1,
     ) == ("acb", 1, 0)
     with pytest.raises(TypeError, match="score_cutoff must be an int"):

@@ -36,6 +36,17 @@ class JapaneseDictionary:
         longest_only: bool | None = None,
         score_cutoff: int | None = None,
     ) -> int: ...
+    def combined_distance(
+        self,
+        left: str,
+        right: str,
+        *,
+        max_readings_per_segment: int | None = None,
+        max_span_chars: int | None = None,
+        max_paths: int | None = None,
+        longest_only: bool | None = None,
+        score_cutoff: int | None = None,
+    ) -> int: ...
     def within_distance(
         self,
         left: str,
@@ -127,6 +138,17 @@ class JapaneseDictionary:
         score_cutoff: int | None = None,
     ) -> list[list[int]]: ...
     def _cdist_damerau_distance(
+        self,
+        queries: Sequence[str],
+        choices: Sequence[str],
+        *,
+        max_readings_per_segment: int | None = None,
+        max_span_chars: int | None = None,
+        max_paths: int | None = None,
+        longest_only: bool | None = None,
+        score_cutoff: int | None = None,
+    ) -> list[list[int]]: ...
+    def _cdist_combined_distance(
         self,
         queries: Sequence[str],
         choices: Sequence[str],
@@ -191,6 +213,17 @@ class ChineseDictionary:
         longest_only: bool | None = None,
         score_cutoff: int | None = None,
     ) -> int: ...
+    def combined_distance(
+        self,
+        left: str,
+        right: str,
+        *,
+        max_readings_per_segment: int | None = None,
+        max_span_chars: int | None = None,
+        max_paths: int | None = None,
+        longest_only: bool | None = None,
+        score_cutoff: int | None = None,
+    ) -> int: ...
     def within_distance(
         self,
         left: str,
@@ -292,6 +325,17 @@ class ChineseDictionary:
         longest_only: bool | None = None,
         score_cutoff: int | None = None,
     ) -> list[list[int]]: ...
+    def _cdist_combined_distance(
+        self,
+        queries: Sequence[str],
+        choices: Sequence[str],
+        *,
+        max_readings_per_segment: int | None = None,
+        max_span_chars: int | None = None,
+        max_paths: int | None = None,
+        longest_only: bool | None = None,
+        score_cutoff: int | None = None,
+    ) -> list[list[int]]: ...
     def _cdist_normalized_distance(
         self,
         queries: Sequence[str],
@@ -317,6 +361,7 @@ class ChineseDictionary:
 
 def distance(left: str, right: str, *, score_cutoff: int | None = None) -> int: ...
 def damerau_distance(left: str, right: str, *, score_cutoff: int | None = None) -> int: ...
+def combined_distance(left: str, right: str, *, score_cutoff: int | None = None) -> int: ...
 def normalized_distance(left: str, right: str, *, score_cutoff: float | None = None) -> float: ...
 def normalized_similarity(left: str, right: str, *, score_cutoff: float | None = None) -> float: ...
 def ratio(left: str, right: str, *, score_cutoff: float | None = None) -> float: ...
@@ -341,6 +386,12 @@ def _cdist_distance(
     score_cutoff: int | None = None,
 ) -> list[list[int]]: ...
 def _cdist_damerau_distance(
+    queries: Sequence[str],
+    choices: Sequence[str],
+    *,
+    score_cutoff: int | None = None,
+) -> list[list[int]]: ...
+def _cdist_combined_distance(
     queries: Sequence[str],
     choices: Sequence[str],
     *,

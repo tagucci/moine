@@ -20,6 +20,7 @@ Language = Literal["ja", "ja-unidic", "ja-sudachi", "zh"]
 Metric = Literal[
     "distance",
     "damerau_distance",
+    "combined_distance",
     "normalized_distance",
     "normalized_similarity",
     "ratio",
@@ -282,6 +283,47 @@ def damerau_distance(
         max_paths=max_paths,
         longest_only=longest_only,
         score_cutoff=score_cutoff,
+    )
+
+
+def combined_distance(
+    left: str,
+    right: str,
+    *,
+    lang: Language | None = None,
+    dictionary: _Dictionary | None = None,
+    score_cutoff: int | None = None,
+    max_readings_per_segment: int | None = None,
+    max_span_chars: int | None = None,
+    max_paths: int | None = None,
+    longest_only: bool | None = None,
+) -> int:
+    """Compute min(surface Damerau-Levenshtein, language-aware LPED)."""
+
+    if lang is None and dictionary is None:
+        _reject_dictionary_options(
+            max_readings_per_segment=max_readings_per_segment,
+            max_span_chars=max_span_chars,
+            max_paths=max_paths,
+            longest_only=longest_only,
+        )
+        cutoff = _distance_score_cutoff(score_cutoff)
+        return _moine.combined_distance(
+            left,
+            right,
+            score_cutoff=cutoff,
+        )
+
+    dictionary = _resolve_dictionary(lang=lang, dictionary=dictionary)
+    cutoff = _distance_score_cutoff(score_cutoff)
+    return dictionary.combined_distance(
+        left,
+        right,
+        max_readings_per_segment=max_readings_per_segment,
+        max_span_chars=max_span_chars,
+        max_paths=max_paths,
+        longest_only=longest_only,
+        score_cutoff=cutoff,
     )
 
 
@@ -573,6 +615,12 @@ def cdist(
                 choice_list,
                 score_cutoff=_distance_score_cutoff(score_cutoff),
             )
+        if metric == "combined_distance":
+            return _moine._cdist_combined_distance(
+                query_list,
+                choice_list,
+                score_cutoff=_distance_score_cutoff(score_cutoff),
+            )
         if metric == "normalized_distance":
             return _moine._cdist_normalized_distance(
                 query_list,
@@ -598,6 +646,16 @@ def cdist(
         )
     if metric == "damerau_distance":
         return dictionary._cdist_damerau_distance(
+            query_list,
+            choice_list,
+            max_readings_per_segment=max_readings_per_segment,
+            max_span_chars=max_span_chars,
+            max_paths=max_paths,
+            longest_only=longest_only,
+            score_cutoff=_distance_score_cutoff(score_cutoff),
+        )
+    if metric == "combined_distance":
+        return dictionary._cdist_combined_distance(
             query_list,
             choice_list,
             max_readings_per_segment=max_readings_per_segment,
@@ -671,6 +729,8 @@ def _normalize_metric(metric: str) -> Metric:
         return "distance"
     if metric == "damerau_distance":
         return "damerau_distance"
+    if metric == "combined_distance":
+        return "combined_distance"
     if metric == "normalized_distance":
         return "normalized_distance"
     if metric == "normalized_similarity":
@@ -678,7 +738,7 @@ def _normalize_metric(metric: str) -> Metric:
     if metric == "ratio":
         return "ratio"
     raise ValueError(
-        "metric must be 'distance', 'damerau_distance', "
+        "metric must be 'distance', 'damerau_distance', 'combined_distance', "
         "'normalized_distance', 'normalized_similarity', or 'ratio'"
     )
 
@@ -737,9 +797,9 @@ def _distance_score_cutoff(score_cutoff: int | float | None) -> int | None:
     if score_cutoff is None:
         return None
     if isinstance(score_cutoff, bool) or not isinstance(score_cutoff, int):
-        raise TypeError("score_cutoff must be an int for metric='distance'")
+        raise TypeError("score_cutoff must be an int for distance metrics")
     if score_cutoff < 0:
-        raise ValueError("score_cutoff must be >= 0 for metric='distance'")
+        raise ValueError("score_cutoff must be >= 0 for distance metrics")
     return score_cutoff
 
 
@@ -884,6 +944,7 @@ __all__ = [
     "clear_default_dictionary",
     "Dictionary",
     "JapaneseDictionary",
+    "combined_distance",
     "damerau_distance",
     "damerau_distance_paths",
     "distance",

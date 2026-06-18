@@ -2,7 +2,7 @@
 
 use moine_core::{
     normalized_similarity_str, try_damerau_distance as lattice_try_damerau_distance,
-    try_distance as lattice_try_distance,
+    try_damerau_levenshtein_str, try_distance as lattice_try_distance,
     try_within_damerau_distance as lattice_try_within_damerau_distance,
     try_within_distance as lattice_try_within_distance, Lattice,
 };
@@ -17,8 +17,9 @@ use moine_zh::{
     ZhArtifactMetadata, ZhReadingIndex,
     ARTIFACT_PAYLOAD_FILE_DIGEST_ALGORITHM as ZH_ARTIFACT_PAYLOAD_FILE_DIGEST_ALGORITHM,
 };
-use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
+use pyo3::types::{PyAny, PyBool};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -73,6 +74,51 @@ fn raw_damerau_distance_pair_with_cutoff(
     let left_lattice = Lattice::from_paths([left]);
     let right_lattice = Lattice::from_paths([right]);
     damerau_distance_with_cutoff(&left_lattice, &right_lattice, score_cutoff)
+}
+
+#[pyfunction(signature = (left, right, *, score_cutoff = None))]
+fn combined_distance(
+    py: Python<'_>,
+    left: &str,
+    right: &str,
+    score_cutoff: Option<&Bound<'_, PyAny>>,
+) -> PyResult<usize> {
+    let score_cutoff = validate_distance_score_cutoff(score_cutoff)?;
+    let left = left.to_owned();
+    let right = right.to_owned();
+    py.detach(move || raw_combined_distance_pair_with_cutoff(&left, &right, score_cutoff))
+}
+
+fn raw_combined_distance_pair_with_cutoff(
+    left: &str,
+    right: &str,
+    score_cutoff: Option<usize>,
+) -> PyResult<usize> {
+    let left_lattice = Lattice::from_paths([left]);
+    let right_lattice = Lattice::from_paths([right]);
+    combined_distance_with_cutoff(left, right, &left_lattice, &right_lattice, score_cutoff)
+}
+
+fn validate_distance_score_cutoff(
+    score_cutoff: Option<&Bound<'_, PyAny>>,
+) -> PyResult<Option<usize>> {
+    let Some(score_cutoff) = score_cutoff else {
+        return Ok(None);
+    };
+    if score_cutoff.is_instance_of::<PyBool>() {
+        return Err(PyTypeError::new_err(
+            "score_cutoff must be an int for distance metrics",
+        ));
+    }
+    let score_cutoff = score_cutoff
+        .extract::<isize>()
+        .map_err(|_| PyTypeError::new_err("score_cutoff must be an int for distance metrics"))?;
+    if score_cutoff < 0 {
+        return Err(PyValueError::new_err(
+            "score_cutoff must be >= 0 for distance metrics",
+        ));
+    }
+    Ok(Some(score_cutoff as usize))
 }
 
 #[pyfunction(signature = (left, right, *, score_cutoff = None))]
@@ -188,6 +234,27 @@ fn _cdist_damerau_distance(
         let query_lattices = string_lattices(&queries);
         let choice_lattices = string_lattices(&choices);
         cdist_damerau_distance_matrix(&query_lattices, &choice_lattices, score_cutoff)
+    })
+}
+
+#[pyfunction(signature = (queries, choices, *, score_cutoff = None))]
+fn _cdist_combined_distance(
+    py: Python<'_>,
+    queries: Vec<String>,
+    choices: Vec<String>,
+    score_cutoff: Option<&Bound<'_, PyAny>>,
+) -> PyResult<Vec<Vec<usize>>> {
+    let score_cutoff = validate_distance_score_cutoff(score_cutoff)?;
+    py.detach(move || {
+        let query_lattices = string_lattices(&queries);
+        let choice_lattices = string_lattices(&choices);
+        cdist_combined_distance_matrix(
+            &queries,
+            &choices,
+            &query_lattices,
+            &choice_lattices,
+            score_cutoff,
+        )
     })
 }
 
@@ -481,6 +548,42 @@ impl PyJapaneseDictionary {
         })
     }
 
+    #[pyo3(signature = (left, right, *, max_readings_per_segment = None, max_span_chars = None, max_paths = None, longest_only = None, score_cutoff = None))]
+    fn combined_distance(
+        &self,
+        py: Python<'_>,
+        left: &str,
+        right: &str,
+        max_readings_per_segment: Option<usize>,
+        max_span_chars: Option<usize>,
+        max_paths: Option<usize>,
+        longest_only: Option<bool>,
+        score_cutoff: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<usize> {
+        let score_cutoff = validate_distance_score_cutoff(score_cutoff)?;
+        let left = left.to_owned();
+        let right = right.to_owned();
+        let options = self.dictionary_options(
+            max_readings_per_segment,
+            max_span_chars,
+            max_paths,
+            longest_only,
+        );
+        py.detach(move || {
+            let left_lattice = unidic_or_direct_lattice(&left, &self.index, options)
+                .map_err(|err| PyValueError::new_err(err.to_string()))?;
+            let right_lattice = unidic_or_direct_lattice(&right, &self.index, options)
+                .map_err(|err| PyValueError::new_err(err.to_string()))?;
+            combined_distance_with_cutoff(
+                &left,
+                &right,
+                &left_lattice,
+                &right_lattice,
+                score_cutoff,
+            )
+        })
+    }
+
     #[pyo3(signature = (left, right, threshold, *, max_readings_per_segment = None, max_span_chars = None, max_paths = None, longest_only = None))]
     fn within_distance(
         &self,
@@ -755,6 +858,38 @@ impl PyJapaneseDictionary {
             let query_lattices = ja_lattices(&queries, &self.index, options)?;
             let choice_lattices = ja_lattices(&choices, &self.index, options)?;
             cdist_damerau_distance_matrix(&query_lattices, &choice_lattices, score_cutoff)
+        })
+    }
+
+    #[pyo3(signature = (queries, choices, *, max_readings_per_segment = None, max_span_chars = None, max_paths = None, longest_only = None, score_cutoff = None))]
+    fn _cdist_combined_distance(
+        &self,
+        py: Python<'_>,
+        queries: Vec<String>,
+        choices: Vec<String>,
+        max_readings_per_segment: Option<usize>,
+        max_span_chars: Option<usize>,
+        max_paths: Option<usize>,
+        longest_only: Option<bool>,
+        score_cutoff: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Vec<Vec<usize>>> {
+        let score_cutoff = validate_distance_score_cutoff(score_cutoff)?;
+        let options = self.dictionary_options(
+            max_readings_per_segment,
+            max_span_chars,
+            max_paths,
+            longest_only,
+        );
+        py.detach(move || {
+            let query_lattices = ja_lattices(&queries, &self.index, options)?;
+            let choice_lattices = ja_lattices(&choices, &self.index, options)?;
+            cdist_combined_distance_matrix(
+                &queries,
+                &choices,
+                &query_lattices,
+                &choice_lattices,
+                score_cutoff,
+            )
         })
     }
 
@@ -972,6 +1107,42 @@ impl PyChineseDictionary {
         })
     }
 
+    #[pyo3(signature = (left, right, *, max_readings_per_segment = None, max_span_chars = None, max_paths = None, longest_only = None, score_cutoff = None))]
+    fn combined_distance(
+        &self,
+        py: Python<'_>,
+        left: &str,
+        right: &str,
+        max_readings_per_segment: Option<usize>,
+        max_span_chars: Option<usize>,
+        max_paths: Option<usize>,
+        longest_only: Option<bool>,
+        score_cutoff: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<usize> {
+        let score_cutoff = validate_distance_score_cutoff(score_cutoff)?;
+        let left = left.to_owned();
+        let right = right.to_owned();
+        let options = self.dictionary_options(
+            max_readings_per_segment,
+            max_span_chars,
+            max_paths,
+            longest_only,
+        );
+        py.detach(move || {
+            let left_lattice = zh_or_direct_lattice(&left, &self.index, options)
+                .map_err(|err| PyValueError::new_err(err.to_string()))?;
+            let right_lattice = zh_or_direct_lattice(&right, &self.index, options)
+                .map_err(|err| PyValueError::new_err(err.to_string()))?;
+            combined_distance_with_cutoff(
+                &left,
+                &right,
+                &left_lattice,
+                &right_lattice,
+                score_cutoff,
+            )
+        })
+    }
+
     #[pyo3(signature = (left, right, threshold, *, max_readings_per_segment = None, max_span_chars = None, max_paths = None, longest_only = None))]
     fn within_distance(
         &self,
@@ -1244,6 +1415,38 @@ impl PyChineseDictionary {
             let query_lattices = zh_lattices(&queries, &self.index, options)?;
             let choice_lattices = zh_lattices(&choices, &self.index, options)?;
             cdist_damerau_distance_matrix(&query_lattices, &choice_lattices, score_cutoff)
+        })
+    }
+
+    #[pyo3(signature = (queries, choices, *, max_readings_per_segment = None, max_span_chars = None, max_paths = None, longest_only = None, score_cutoff = None))]
+    fn _cdist_combined_distance(
+        &self,
+        py: Python<'_>,
+        queries: Vec<String>,
+        choices: Vec<String>,
+        max_readings_per_segment: Option<usize>,
+        max_span_chars: Option<usize>,
+        max_paths: Option<usize>,
+        longest_only: Option<bool>,
+        score_cutoff: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Vec<Vec<usize>>> {
+        let score_cutoff = validate_distance_score_cutoff(score_cutoff)?;
+        let options = self.dictionary_options(
+            max_readings_per_segment,
+            max_span_chars,
+            max_paths,
+            longest_only,
+        );
+        py.detach(move || {
+            let query_lattices = zh_lattices(&queries, &self.index, options)?;
+            let choice_lattices = zh_lattices(&choices, &self.index, options)?;
+            cdist_combined_distance_matrix(
+                &queries,
+                &choices,
+                &query_lattices,
+                &choice_lattices,
+                score_cutoff,
+            )
         })
     }
 
@@ -1969,6 +2172,34 @@ fn cdist_damerau_distance_matrix(
         .collect()
 }
 
+fn cdist_combined_distance_matrix(
+    queries: &[String],
+    choices: &[String],
+    query_lattices: &[Lattice],
+    choice_lattices: &[Lattice],
+    score_cutoff: Option<usize>,
+) -> PyResult<Vec<Vec<usize>>> {
+    queries
+        .iter()
+        .zip(query_lattices.iter())
+        .map(|(query, query_lattice)| {
+            choices
+                .iter()
+                .zip(choice_lattices.iter())
+                .map(|(choice, choice_lattice)| {
+                    combined_distance_with_cutoff(
+                        query,
+                        choice,
+                        query_lattice,
+                        choice_lattice,
+                        score_cutoff,
+                    )
+                })
+                .collect()
+        })
+        .collect()
+}
+
 fn cdist_similarity_matrix(
     query_paths: &[Vec<String>],
     choice_paths: &[Vec<String>],
@@ -2031,6 +2262,24 @@ fn distance_with_cutoff(
     lattice_try_distance(left_lattice, right_lattice).map_err(distance_error)
 }
 
+fn combined_distance_with_cutoff(
+    left: &str,
+    right: &str,
+    left_lattice: &Lattice,
+    right_lattice: &Lattice,
+    score_cutoff: Option<usize>,
+) -> PyResult<usize> {
+    let surface_damerau = try_damerau_levenshtein_str(left, right).map_err(distance_error)?;
+    let lattice = distance_with_cutoff(left_lattice, right_lattice, score_cutoff)?;
+    let combined = surface_damerau.min(lattice);
+    if let Some(cutoff) = score_cutoff {
+        if combined > cutoff {
+            return Ok(cutoff + 1);
+        }
+    }
+    Ok(combined)
+}
+
 fn damerau_distance_with_cutoff(
     left_lattice: &Lattice,
     right_lattice: &Lattice,
@@ -2091,6 +2340,7 @@ fn _moine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add_function(wrap_pyfunction!(distance, m)?)?;
     m.add_function(wrap_pyfunction!(damerau_distance, m)?)?;
+    m.add_function(wrap_pyfunction!(combined_distance, m)?)?;
     m.add_function(wrap_pyfunction!(normalized_distance, m)?)?;
     m.add_function(wrap_pyfunction!(normalized_similarity, m)?)?;
     m.add_function(wrap_pyfunction!(ratio, m)?)?;
@@ -2098,6 +2348,7 @@ fn _moine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(_partial_ratio_alignment, m)?)?;
     m.add_function(wrap_pyfunction!(_cdist_distance, m)?)?;
     m.add_function(wrap_pyfunction!(_cdist_damerau_distance, m)?)?;
+    m.add_function(wrap_pyfunction!(_cdist_combined_distance, m)?)?;
     m.add_function(wrap_pyfunction!(_cdist_normalized_distance, m)?)?;
     m.add_function(wrap_pyfunction!(_cdist_normalized_similarity, m)?)?;
     m.add_function(wrap_pyfunction!(distance_paths, m)?)?;
@@ -2124,6 +2375,30 @@ mod tests {
             assert_eq!(distance(py, "abc", "adc", Some(0)).unwrap(), 1);
             assert_eq!(damerau_distance(py, "abc", "acb", None).unwrap(), 1);
             assert_eq!(damerau_distance(py, "abc", "acb", Some(0)).unwrap(), 1);
+            assert_eq!(combined_distance(py, "abc", "acb", None).unwrap(), 1);
+            let zero = 0usize.into_pyobject(py).unwrap();
+            assert_eq!(
+                combined_distance(py, "abc", "acb", Some(zero.as_any())).unwrap(),
+                1
+            );
+            let bool_cutoff = true.into_pyobject(py).unwrap();
+            assert!(
+                combined_distance(py, "abc", "acb", Some(bool_cutoff.as_any()))
+                    .unwrap_err()
+                    .is_instance_of::<PyTypeError>(py)
+            );
+            let float_cutoff = 0.5f64.into_pyobject(py).unwrap();
+            assert!(
+                combined_distance(py, "abc", "acb", Some(float_cutoff.as_any()))
+                    .unwrap_err()
+                    .is_instance_of::<PyTypeError>(py)
+            );
+            let negative_cutoff = (-1isize).into_pyobject(py).unwrap();
+            assert!(
+                combined_distance(py, "abc", "acb", Some(negative_cutoff.as_any()))
+                    .unwrap_err()
+                    .is_instance_of::<PyValueError>(py)
+            );
             assert_close(
                 normalized_similarity(py, "abc", "adc", None).unwrap(),
                 2.0 / 3.0,
@@ -2309,9 +2584,22 @@ mod tests {
                     Some(0),
                 )
                 .unwrap();
+            let combined_distance = dictionary
+                .combined_distance(
+                    py,
+                    "マトリッツォ",
+                    "マリトッツォ",
+                    Some(16),
+                    None,
+                    Some(128),
+                    Some(true),
+                    None,
+                )
+                .unwrap();
 
             assert_eq!(distance, 1);
             assert_eq!(cutoff_distance, 1);
+            assert_eq!(combined_distance, 1);
             assert!(dictionary
                 .within_distance(
                     py,

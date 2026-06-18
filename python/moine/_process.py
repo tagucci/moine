@@ -11,6 +11,7 @@ ExtractResult = tuple[str, Score, ChoiceKey]
 Scorer = Literal[
     "distance",
     "damerau_distance",
+    "combined_distance",
     "normalized_distance",
     "normalized_similarity",
     "ratio",
@@ -30,6 +31,7 @@ class ReadingOptions:
 class ScorerFunctions:
     distance: Callable[..., int]
     damerau_distance: Callable[..., int]
+    combined_distance: Callable[..., int]
     normalized_distance: Callable[..., float]
     normalized_similarity: Callable[..., float]
     ratio: Callable[..., float]
@@ -155,22 +157,22 @@ def _iter_choices(choices: Choices) -> Iterable[tuple[str, ChoiceKey]]:
 def _scorer_kind(scorer: Scorer) -> ScorerKind:
     if not isinstance(scorer, str):
         raise TypeError("scorer must be a str")
-    if scorer in {"distance", "damerau_distance"}:
+    if scorer in {"distance", "damerau_distance", "combined_distance"}:
         return "distance"
     if scorer == "normalized_distance":
         return "distance"
     if scorer in {"normalized_similarity", "ratio"}:
         return "similarity"
     raise ValueError(
-        "scorer must be 'distance', 'damerau_distance', 'normalized_distance', "
-        "'normalized_similarity', or 'ratio'"
+        "scorer must be 'distance', 'damerau_distance', 'combined_distance', "
+        "'normalized_distance', 'normalized_similarity', or 'ratio'"
     )
 
 
 def _validate_score_cutoff(score_cutoff: Score | None, scorer: Scorer) -> Score | None:
     if score_cutoff is None:
         return None
-    if scorer in {"distance", "damerau_distance"}:
+    if scorer in {"distance", "damerau_distance", "combined_distance"}:
         if isinstance(score_cutoff, bool) or not isinstance(score_cutoff, int):
             raise TypeError("score_cutoff must be an int for distance scorers")
         if score_cutoff < 0:
@@ -282,6 +284,13 @@ def _score_choice(
             **kwargs,
             score_cutoff=_distance_cutoff(score_cutoff),
         )
+    if scorer == "combined_distance":
+        return scorers.combined_distance(
+            query,
+            choice,
+            **kwargs,
+            score_cutoff=_distance_cutoff(score_cutoff),
+        )
     if scorer == "normalized_similarity":
         return scorers.normalized_similarity(
             query,
@@ -304,8 +313,8 @@ def _score_choice(
             score_cutoff=_normalized_cutoff(score_cutoff),
         )
     raise ValueError(
-        "scorer must be 'distance', 'damerau_distance', 'normalized_distance', "
-        "'normalized_similarity', or 'ratio'"
+        "scorer must be 'distance', 'damerau_distance', 'combined_distance', "
+        "'normalized_distance', 'normalized_similarity', or 'ratio'"
     )
 
 

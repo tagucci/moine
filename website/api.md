@@ -54,6 +54,22 @@ It can count adjacent transpositions as one edit on lattice paths.
 1
 ```
 
+## `moine.combined_distance`
+
+<p class="api-signature"><code>moine.combined_distance(left, right, *, lang=None, dictionary=None, score_cutoff=None, max_readings_per_segment=None, max_span_chars=None, max_paths=None, longest_only=None)</code></p>
+
+Returns `min(surface Damerau-Levenshtein, LPED)` for one pair of strings. This
+matches the paper-style fallback scorer used when a surface adjacent
+transposition should beat the reading-space Levenshtein distance. It is
+different from `damerau_distance`, which applies Damerau-Levenshtein on lattice
+paths.
+
+```python
+>>> import moine
+>>> moine.combined_distance("マトリッツォ", "マリトッツォ", lang="ja")
+1
+```
+
 ## `moine.normalized_distance`
 
 <p class="api-signature"><code>moine.normalized_distance(left, right, *, lang=None, dictionary=None, score_cutoff=None, max_readings_per_segment=None, max_span_chars=None, max_paths=None, longest_only=None)</code></p>
@@ -163,8 +179,8 @@ Returns a query-by-choice matrix of scores.
   `lang`.
 
 `metric`
-: One of `"distance"`, `"damerau_distance"`, `"normalized_distance"`,
-  `"normalized_similarity"`, or `"ratio"`.
+: One of `"distance"`, `"damerau_distance"`, `"combined_distance"`,
+  `"normalized_distance"`, `"normalized_similarity"`, or `"ratio"`.
 
 `score_cutoff`
 : Optional threshold. Use an integer for distance metrics and a float for
