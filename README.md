@@ -191,21 +191,26 @@ moine chinese-compare --left weishiji --right 威士忌 \
 Use `moine download ja-unidic` for explicit UniDic-CWJ and
 `moine download ja-sudachi` for SudachiDict-full.
 
-The artifact bundle, verification, archive, and diagnostic commands are
-maintainer-facing tools for producing and checking release assets. They are
-documented in [docs/development.md](docs/development.md) and
+The artifact bundle, verification, archive, and raw-dictionary inspection
+commands are maintainer-facing tools for producing and checking release assets.
+They are documented in [docs/development.md](docs/development.md) and
 [docs/release_process.md](docs/release_process.md).
 
-Japanese comparison diagnostics can emit romaji lattice graphs with
-`--romaji-lattice <PATH> --output-format <dot|svg|png>`. Writing SVG or PNG
-graphs requires the Graphviz `dot` command to be available in `PATH`; DOT output
-does not require that runtime dependency.
+The public comparison commands can also emit lattice graphs:
+`moine compare --romaji-lattice <PATH> --output-format <dot|svg|png>` for
+Japanese romaji lattices, and
+`moine chinese-compare --pinyin-lattice <PATH> --output-format <dot|svg|png>`
+for Chinese pinyin lattices. Writing SVG or PNG graphs requires the Graphviz
+`dot` command to be available in `PATH`; DOT output does not require that runtime
+dependency. See [CLI usage](https://tagucci.github.io/moine/cli/) for rendered
+examples.
 
 ## Documentation
 
 - [Project documentation](https://tagucci.github.io/moine/)
 - [Installation](https://tagucci.github.io/moine/installation/)
 - [Python usage](https://tagucci.github.io/moine/usage/)
+- [CLI usage](https://tagucci.github.io/moine/cli/)
 - [API reference](https://tagucci.github.io/moine/api/)
 - [Rust usage](https://tagucci.github.io/moine/rust/)
 - [Dictionary artifacts](https://tagucci.github.io/moine/artifacts/)

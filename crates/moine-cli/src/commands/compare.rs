@@ -94,6 +94,15 @@ pub(crate) fn run_chinese_compare(options: ChineseCompareOptions) -> Result<(), 
         Ok(trace) => (Some(trace), None),
         Err(err) => (None, Some(err.to_string())),
     };
+    let pinyin_lattice_data = options.pinyin_lattice.as_ref().map(|_| RomajiLatticeData {
+        left_input: options.left.clone(),
+        right_input: options.right.clone(),
+        left_lattice: left_lattice.clone(),
+        right_lattice: right_lattice.clone(),
+        distance: distances.lattice,
+        trace: trace.clone(),
+        trace_error: trace_error.clone(),
+    });
     let left_expansion = query_pinyin_expansion(&options.left, &index, options.reading_options);
     let right_expansion = query_pinyin_expansion(&options.right, &index, options.reading_options);
     let (source_label, source_path) = options.source.label();
@@ -127,6 +136,23 @@ pub(crate) fn run_chinese_compare(options: ChineseCompareOptions) -> Result<(), 
         trace.as_ref(),
         trace_error.as_deref(),
     );
+    if let Some(path) = &options.pinyin_lattice {
+        let data = pinyin_lattice_data
+            .as_ref()
+            .expect("pinyin lattice data exists");
+        let dot = pinyin_lattice_dot(data);
+        match options.output_format {
+            RomajiLatticeOutputFormat::Dot => write_output_file(Path::new(path), &dot)?,
+            RomajiLatticeOutputFormat::Svg | RomajiLatticeOutputFormat::Png => {
+                write_romaji_lattice_graph(Path::new(path), &dot, options.output_format)?;
+            }
+        }
+        println!();
+        println!(
+            "pinyin_lattice: {path} ({})",
+            options.output_format.as_str()
+        );
+    }
 
     Ok(())
 }
@@ -751,6 +777,14 @@ pub(crate) fn symbols_to_string(symbols: &[moine_core::Symbol]) -> String {
 }
 
 pub(crate) fn romaji_lattice_dot(data: &RomajiLatticeData) -> String {
+    lattice_dot("moine_romaji_lattice", data)
+}
+
+pub(crate) fn pinyin_lattice_dot(data: &RomajiLatticeData) -> String {
+    lattice_dot("moine_pinyin_lattice", data)
+}
+
+fn lattice_dot(graph_name: &str, data: &RomajiLatticeData) -> String {
     let left_symbols = data.trace.as_ref().map(DistanceTrace::left_symbols);
     let right_symbols = data.trace.as_ref().map(DistanceTrace::right_symbols);
     let left_best_arcs = left_symbols
@@ -776,7 +810,7 @@ pub(crate) fn romaji_lattice_dot(data: &RomajiLatticeData) -> String {
     let graph_label = format!("distance={}\\n{}", data.distance, best_path_label);
 
     let mut dot = String::new();
-    dot.push_str("digraph moine_romaji_lattice {\n");
+    dot.push_str(&format!("digraph {graph_name} {{\n"));
     dot.push_str("  rankdir=LR;\n");
     dot.push_str("  graph [fontname=\"Helvetica\", labelloc=\"t\", label=\"");
     dot.push_str(&graph_label);

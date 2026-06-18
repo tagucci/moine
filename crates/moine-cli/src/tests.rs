@@ -290,6 +290,7 @@ fn parses_chinese_compare_options() {
         ZhIndexSource::Cedict("cedict_1_0_ts_utf-8_mdbg.txt".to_string())
     );
     assert_eq!(options.index_options.pinyin_view, PinyinView::NoTone);
+    assert_eq!(options.pinyin_lattice, None);
 }
 
 #[test]
@@ -303,6 +304,10 @@ fn parses_chinese_compare_artifact_metadata_options() {
         "dist/moine-cedict/metadata.yaml".to_string(),
         "--max-paths".to_string(),
         "128".to_string(),
+        "--pinyin-lattice".to_string(),
+        "/tmp/moine-pinyin-lattice.svg".to_string(),
+        "--output-format".to_string(),
+        "svg".to_string(),
     ])
     .unwrap();
 
@@ -311,6 +316,11 @@ fn parses_chinese_compare_artifact_metadata_options() {
         ZhIndexSource::ArtifactMetadata("dist/moine-cedict/metadata.yaml".to_string())
     );
     assert_eq!(options.reading_options.max_paths, 128);
+    assert_eq!(
+        options.pinyin_lattice,
+        Some("/tmp/moine-pinyin-lattice.svg".to_string())
+    );
+    assert_eq!(options.output_format, RomajiLatticeOutputFormat::Svg);
 }
 
 #[test]
@@ -455,6 +465,28 @@ fn renders_romaji_lattice_dot_with_best_path() {
     assert!(dot.contains("label=\"s\""));
     assert!(dot.contains("color=\"#9a5b38\""));
     assert!(dot.contains("penwidth=3.0"));
+}
+
+#[test]
+fn renders_pinyin_lattice_dot_with_best_path() {
+    let left_lattice = Lattice::from_paths(["weishiji"]);
+    let right_lattice = Lattice::from_paths(["weishiji"]);
+    let trace = distance_with_trace(&left_lattice, &right_lattice);
+    let dot = pinyin_lattice_dot(&RomajiLatticeData {
+        left_input: "weishiji".to_string(),
+        right_input: "威士忌".to_string(),
+        left_lattice,
+        right_lattice,
+        distance: trace.distance,
+        trace: Some(trace),
+        trace_error: None,
+    });
+
+    assert!(dot.contains("digraph moine_pinyin_lattice"));
+    assert!(dot.contains("best_left=weishiji"));
+    assert!(dot.contains("best_right=weishiji"));
+    assert!(dot.contains("label=\"w\""));
+    assert!(dot.contains("color=\"#9a5b38\""));
 }
 
 #[test]
