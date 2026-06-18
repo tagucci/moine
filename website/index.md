@@ -30,6 +30,7 @@ especially when surface forms differ but reading paths stay close.
 ## Try It
 
 [Open the browser demo](demo/){ .md-button .md-button--primary }
+[Use the CLI](cli.md){ .md-button }
 [Read the Python API reference](api.md){ .md-button }
 
 ## Name

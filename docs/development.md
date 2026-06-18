@@ -154,6 +154,24 @@ cargo run -q -p moine-cli -- compare \
   --longest-only
 ```
 
+Render the same kind of comparison as a romaji lattice graph:
+
+```bash
+cargo run -q -p moine-cli -- compare \
+  --left "ジュジュツカイセン" \
+  --right "呪術廻戦" \
+  --sudachi-lex-csv /tmp/sudachi-raw-20260428/full_lex.csv \
+  --max-readings-per-surface 16 \
+  --max-readings-per-segment 16 \
+  --max-paths 128 \
+  --longest-only \
+  --romaji-lattice jujutsu-sudachi.svg \
+  --output-format svg
+```
+
+The public website shows the installed-artifact version of this example in
+[CLI usage](https://tagucci.github.io/moine/cli/).
+
 ## UniDic Artifact Recipes
 
 Create a release-style indexed bundle:
@@ -306,6 +324,18 @@ cargo run -q -p moine-cli -- chinese-compare \
   --cedict cedict_1_0_ts_utf-8_mdbg.txt \
   --longest-only \
   --max-paths 128
+```
+
+Render the pinyin lattice used by Chinese comparison:
+
+```bash
+cargo run -q -p moine-cli -- chinese-compare \
+  --left "tiaoheweishiji" \
+  --right "调和威士忌" \
+  --cedict cedict_1_0_ts_utf-8_mdbg.txt \
+  --max-paths 128 \
+  --pinyin-lattice tiaoheweishiji-pinyin.svg \
+  --output-format svg
 ```
 
 ## CC-CEDICT Artifact Recipes

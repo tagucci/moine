@@ -129,6 +129,8 @@ pub(crate) struct ChineseCompareOptions {
     pub(crate) left: String,
     pub(crate) right: String,
     pub(crate) source: ZhIndexSource,
+    pub(crate) pinyin_lattice: Option<String>,
+    pub(crate) output_format: RomajiLatticeOutputFormat,
     pub(crate) index_options: CedictIndexOptions,
     pub(crate) reading_options: PinyinReadingOptions,
 }
@@ -982,6 +984,10 @@ struct ChineseCompareArgs {
     payload_format: ArtifactPayloadFormat,
     #[arg(long = "artifact-metadata")]
     artifact_metadata: Option<String>,
+    #[arg(long = "pinyin-lattice", value_name = "PATH")]
+    pinyin_lattice: Option<String>,
+    #[arg(long = "output-format", value_parser = parse_romaji_lattice_output_format_clap, value_name = "dot|svg|png", default_value = "svg")]
+    output_format: RomajiLatticeOutputFormat,
     #[command(flatten)]
     index: PinyinIndexArgs,
     #[command(flatten)]
@@ -1006,6 +1012,8 @@ impl ChineseCompareArgs {
             left: self.left,
             right: self.right,
             source,
+            pinyin_lattice: self.pinyin_lattice,
+            output_format: self.output_format,
             index_options: self.index.into_options(),
             reading_options: self.reading.into_options(),
         }

@@ -44,6 +44,11 @@ language:
 0
 ```
 
+Use [CLI usage](cli.md) when you want command-line comparison examples or need
+to inspect the reading lattices behind Japanese and Chinese comparisons,
+including how UniDic-CWJ and SudachiDict-full differ for the
+`ジュジュツカイセン` / `呪術廻戦` pair.
+
 ## Reusing A Dictionary
 
 Load a dictionary explicitly when you want to control startup cost or artifact
