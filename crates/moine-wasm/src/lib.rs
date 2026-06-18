@@ -1,6 +1,9 @@
 use std::io::Cursor;
 
-use moine_core::{levenshtein_str, try_damerau_levenshtein_str, try_distance};
+use moine_core::{
+    dot::LatticeDotData, levenshtein_str, try_damerau_levenshtein_str, try_distance,
+    try_distance_with_trace, Lattice,
+};
 use moine_ja::{
     unidic_or_direct_lattice, DictionaryReadingOptions, JaLatticeError, UnidicArtifactMetadata,
     UnidicReadingIndex,
@@ -13,6 +16,9 @@ use sha2::{Digest, Sha256};
 use wasm_bindgen::prelude::*;
 
 const MAX_WASM_PAYLOAD_BYTES: usize = 512 * 1024 * 1024;
+const MAX_DEMO_LATTICE_NODES: usize = 180;
+const MAX_DEMO_LATTICE_ARCS: usize = 320;
+const MAX_DEMO_TRACE_CELLS: usize = 25_000;
 
 #[wasm_bindgen]
 pub struct ComparisonResult {
@@ -36,6 +42,25 @@ impl ComparisonResult {
     #[wasm_bindgen(getter, js_name = latticePathEditDistance)]
     pub fn lattice_path_edit_distance(&self) -> usize {
         self.lattice_path_edit_distance
+    }
+}
+
+#[wasm_bindgen]
+pub struct LatticeDotResult {
+    dot: String,
+    warning: String,
+}
+
+#[wasm_bindgen]
+impl LatticeDotResult {
+    #[wasm_bindgen(getter)]
+    pub fn dot(&self) -> String {
+        self.dot.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn warning(&self) -> String {
+        self.warning.clone()
     }
 }
 
@@ -100,6 +125,30 @@ impl MoineDemo {
             lattice_path_edit_distance,
         })
     }
+
+    #[wasm_bindgen(js_name = japaneseLatticeDot)]
+    pub fn japanese_lattice_dot(
+        &self,
+        left: &str,
+        right: &str,
+    ) -> Result<LatticeDotResult, JsValue> {
+        self.japanese
+            .as_ref()
+            .ok_or_else(|| JsValue::from_str("Japanese dictionary is not loaded"))?
+            .lattice_dot(left, right)
+    }
+
+    #[wasm_bindgen(js_name = chineseLatticeDot)]
+    pub fn chinese_lattice_dot(
+        &self,
+        left: &str,
+        right: &str,
+    ) -> Result<LatticeDotResult, JsValue> {
+        self.chinese
+            .as_ref()
+            .ok_or_else(|| JsValue::from_str("Chinese dictionary is not loaded"))?
+            .lattice_dot(left, right)
+    }
 }
 
 struct JapaneseDictionary {
@@ -114,6 +163,20 @@ impl JapaneseDictionary {
         let right_lattice =
             unidic_or_direct_lattice(right, &self.index, self.options).map_err(japanese_error)?;
         try_distance(&left_lattice, &right_lattice).map_err(distance_error)
+    }
+
+    fn lattice_dot(&self, left: &str, right: &str) -> Result<LatticeDotResult, JsValue> {
+        let left_lattice =
+            unidic_or_direct_lattice(left, &self.index, self.options).map_err(japanese_error)?;
+        let right_lattice =
+            unidic_or_direct_lattice(right, &self.index, self.options).map_err(japanese_error)?;
+        lattice_dot_result(
+            left,
+            right,
+            &left_lattice,
+            &right_lattice,
+            moine_core::dot::romaji_lattice_dot,
+        )
     }
 }
 
@@ -130,6 +193,58 @@ impl ChineseDictionary {
             zh_or_direct_lattice(right, &self.index, self.options).map_err(chinese_error)?;
         try_distance(&left_lattice, &right_lattice).map_err(distance_error)
     }
+
+    fn lattice_dot(&self, left: &str, right: &str) -> Result<LatticeDotResult, JsValue> {
+        let left_lattice =
+            zh_or_direct_lattice(left, &self.index, self.options).map_err(chinese_error)?;
+        let right_lattice =
+            zh_or_direct_lattice(right, &self.index, self.options).map_err(chinese_error)?;
+        lattice_dot_result(
+            left,
+            right,
+            &left_lattice,
+            &right_lattice,
+            moine_core::dot::pinyin_lattice_dot,
+        )
+    }
+}
+
+fn lattice_dot_result(
+    left: &str,
+    right: &str,
+    left_lattice: &Lattice,
+    right_lattice: &Lattice,
+    render_dot: fn(&LatticeDotData<'_>) -> String,
+) -> Result<LatticeDotResult, JsValue> {
+    if let Some(warning) = lattice_visualization_warning(left_lattice, right_lattice) {
+        return Ok(LatticeDotResult {
+            dot: String::new(),
+            warning,
+        });
+    }
+
+    let (distance, trace, trace_error) = match try_distance_with_trace(left_lattice, right_lattice)
+    {
+        Ok(trace) => (trace.distance, Some(trace), None),
+        Err(err) => (
+            try_distance(left_lattice, right_lattice).map_err(distance_error)?,
+            None,
+            Some(err.to_string()),
+        ),
+    };
+    let dot = render_dot(&LatticeDotData {
+        left_input: left,
+        right_input: right,
+        left_lattice,
+        right_lattice,
+        distance,
+        trace: trace.as_ref(),
+        trace_error: trace_error.as_deref(),
+    });
+    Ok(LatticeDotResult {
+        dot,
+        warning: String::new(),
+    })
 }
 
 fn load_japanese_dictionary(
@@ -249,6 +364,28 @@ fn verify_payload_size(payload: &[u8], label: &str) -> Result<(), JsValue> {
         )));
     }
     Ok(())
+}
+
+fn lattice_visualization_warning(left: &Lattice, right: &Lattice) -> Option<String> {
+    let nodes = left.node_count().saturating_add(right.node_count());
+    if nodes > MAX_DEMO_LATTICE_NODES {
+        return Some(format!(
+            "Lattice graph omitted because it has {nodes} nodes; limit is {MAX_DEMO_LATTICE_NODES}."
+        ));
+    }
+    let arcs = left.arcs().len().saturating_add(right.arcs().len());
+    if arcs > MAX_DEMO_LATTICE_ARCS {
+        return Some(format!(
+            "Lattice graph omitted because it has {arcs} arcs; limit is {MAX_DEMO_LATTICE_ARCS}."
+        ));
+    }
+    let trace_cells = left.node_count().saturating_mul(right.node_count());
+    if trace_cells > MAX_DEMO_TRACE_CELLS {
+        return Some(format!(
+            "Lattice graph omitted because trace reconstruction would need {trace_cells} cells; limit is {MAX_DEMO_TRACE_CELLS}."
+        ));
+    }
+    None
 }
 
 fn verify_japanese_payload_checksum(
@@ -451,6 +588,66 @@ entries:
             .compare("ja", "モイニャです。", "もいにゃです。")
             .unwrap();
         assert_eq!(punctuated_result.lattice_path_edit_distance(), 0);
+    }
+
+    #[test]
+    fn renders_japanese_lattice_dot_with_loaded_dictionary() {
+        let mut demo = MoineDemo::new();
+        let metadata = JA_METADATA.replace(
+            "checksum: ignored",
+            &format!(
+                "checksum: {}",
+                UnidicReadingIndex::from_artifact_payload_reader(Cursor::new(
+                    JA_PAYLOAD.as_bytes()
+                ))
+                .unwrap()
+                .artifact_payload_checksum()
+            ),
+        );
+        demo.load_japanese_dictionary(&metadata, JA_PAYLOAD.as_bytes())
+            .unwrap();
+
+        let result = demo.japanese_lattice_dot("moine", "モイニャ").unwrap();
+        assert!(result.warning().is_empty());
+        assert!(result.dot().contains("digraph moine_romaji_lattice"));
+        assert!(result.dot().contains("LEFT\\ninput=moine"));
+        assert!(result.dot().contains("RIGHT\\ninput=モイニャ"));
+        assert!(result.dot().contains("best_left=moine"));
+
+        let long = "a".repeat(MAX_DEMO_LATTICE_NODES);
+        let skipped = demo.japanese_lattice_dot(&long, &long).unwrap();
+        assert!(skipped.dot().is_empty());
+        assert!(skipped.warning().contains("omitted"));
+    }
+
+    #[test]
+    fn renders_chinese_lattice_dot_with_loaded_dictionary() {
+        let mut demo = MoineDemo::new();
+        let metadata = ZH_METADATA.replace(
+            "checksum: ignored",
+            &format!(
+                "checksum: {}",
+                CedictReadingIndex::from_artifact_payload_reader(Cursor::new(
+                    ZH_PAYLOAD.as_bytes()
+                ))
+                .unwrap()
+                .artifact_payload_checksum()
+            ),
+        );
+        demo.load_chinese_dictionary(&metadata, ZH_PAYLOAD.as_bytes())
+            .unwrap();
+
+        let result = demo.chinese_lattice_dot("weishiji", "威士忌").unwrap();
+        assert!(result.warning().is_empty());
+        assert!(result.dot().contains("digraph moine_pinyin_lattice"));
+        assert!(result.dot().contains("LEFT\\ninput=weishiji"));
+        assert!(result.dot().contains("RIGHT\\ninput=威士忌"));
+        assert!(result.dot().contains("best_left=weishiji"));
+
+        let long = "a".repeat(MAX_DEMO_LATTICE_NODES);
+        let skipped = demo.chinese_lattice_dot(&long, &long).unwrap();
+        assert!(skipped.dot().is_empty());
+        assert!(skipped.warning().contains("omitted"));
     }
 
     #[test]

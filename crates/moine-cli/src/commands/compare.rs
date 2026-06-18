@@ -1,4 +1,3 @@
-use std::collections::BTreeSet;
 use std::error::Error;
 use std::fs;
 use std::io;
@@ -6,7 +5,7 @@ use std::io::Write as _;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use moine_core::{try_distance_with_trace, DistanceTrace, Lattice, Symbol};
+use moine_core::{dot::LatticeDotData, try_distance_with_trace, DistanceTrace, Lattice};
 use moine_ja::{
     compare_with_overrides, compare_with_unidic_index, unidic_or_direct_lattice,
     DictionaryReadingOptions, DictionaryReadingStats, JapaneseDistance, OverrideDictionary,
@@ -30,10 +29,6 @@ use crate::commands::unidic_artifact::{
     load_unidic_artifact_bundle_for_runtime,
 };
 use crate::commands::zh_artifact::load_zh_index;
-
-const ROMAJI_DOT_BEST_PATH_COLOR: &str = "#9a5b38";
-const ROMAJI_DOT_DEFAULT_NODE_COLOR: &str = "#495057";
-const ROMAJI_DOT_MUTED_EDGE_COLOR: &str = "#868e96";
 
 pub(crate) fn run_cedict_readings(options: CedictReadingsOptions) -> Result<(), Box<dyn Error>> {
     let index =
@@ -770,79 +765,27 @@ pub(crate) fn parse_mecab_tokens(output: &str) -> Vec<MecabToken> {
 }
 
 pub(crate) fn symbols_to_string(symbols: &[moine_core::Symbol]) -> String {
-    symbols
-        .iter()
-        .map(|&symbol| char::from_u32(symbol).unwrap_or(char::REPLACEMENT_CHARACTER))
-        .collect()
+    moine_core::dot::symbols_to_string(symbols)
 }
 
 pub(crate) fn romaji_lattice_dot(data: &RomajiLatticeData) -> String {
-    lattice_dot("moine_romaji_lattice", data)
+    moine_core::dot::romaji_lattice_dot(&lattice_dot_data(data))
 }
 
 pub(crate) fn pinyin_lattice_dot(data: &RomajiLatticeData) -> String {
-    lattice_dot("moine_pinyin_lattice", data)
+    moine_core::dot::pinyin_lattice_dot(&lattice_dot_data(data))
 }
 
-fn lattice_dot(graph_name: &str, data: &RomajiLatticeData) -> String {
-    let left_symbols = data.trace.as_ref().map(DistanceTrace::left_symbols);
-    let right_symbols = data.trace.as_ref().map(DistanceTrace::right_symbols);
-    let left_best_arcs = left_symbols
-        .as_deref()
-        .map(|symbols| best_arc_keys(&data.left_lattice, symbols))
-        .unwrap_or_default();
-    let right_best_arcs = right_symbols
-        .as_deref()
-        .map(|symbols| best_arc_keys(&data.right_lattice, symbols))
-        .unwrap_or_default();
-    let left_best_nodes = best_nodes(&left_best_arcs);
-    let right_best_nodes = best_nodes(&right_best_arcs);
-
-    let best_path_label = match (&left_symbols, &right_symbols, &data.trace_error) {
-        (Some(left), Some(right), _) => format!(
-            "best_left={}\\nbest_right={}",
-            dot_escape(&symbols_to_string(left)),
-            dot_escape(&symbols_to_string(right))
-        ),
-        (_, _, Some(error)) => format!("best path unavailable: {}", dot_escape(error)),
-        _ => "best path unavailable".to_string(),
-    };
-    let graph_label = format!("distance={}\\n{}", data.distance, best_path_label);
-
-    let mut dot = String::new();
-    dot.push_str(&format!("digraph {graph_name} {{\n"));
-    dot.push_str("  rankdir=LR;\n");
-    dot.push_str("  graph [fontname=\"Helvetica\", labelloc=\"t\", label=\"");
-    dot.push_str(&graph_label);
-    dot.push_str("\"];\n");
-    dot.push_str(&format!(
-        "  node [fontname=\"Helvetica\", shape=circle, width=0.48, fixedsize=true, color=\"{ROMAJI_DOT_DEFAULT_NODE_COLOR}\"];\n",
-    ));
-    dot.push_str(&format!(
-        "  edge [fontname=\"Helvetica\", color=\"{ROMAJI_DOT_DEFAULT_NODE_COLOR}\", arrowsize=0.7];\n\n"
-    ));
-
-    append_lattice_cluster(
-        &mut dot,
-        "right",
-        "RIGHT",
-        &data.right_input,
-        &data.right_lattice,
-        &right_best_arcs,
-        &right_best_nodes,
-    );
-    dot.push('\n');
-    append_lattice_cluster(
-        &mut dot,
-        "left",
-        "LEFT",
-        &data.left_input,
-        &data.left_lattice,
-        &left_best_arcs,
-        &left_best_nodes,
-    );
-    dot.push_str("}\n");
-    dot
+fn lattice_dot_data(data: &RomajiLatticeData) -> LatticeDotData<'_> {
+    LatticeDotData {
+        left_input: &data.left_input,
+        right_input: &data.right_input,
+        left_lattice: &data.left_lattice,
+        right_lattice: &data.right_lattice,
+        distance: data.distance,
+        trace: data.trace.as_ref(),
+        trace_error: data.trace_error.as_deref(),
+    }
 }
 
 pub(crate) fn write_romaji_lattice_graph(
@@ -904,136 +847,6 @@ pub(crate) fn write_romaji_lattice_graph_with_dot_command(
     }
 
     Ok(())
-}
-
-fn append_lattice_cluster(
-    dot: &mut String,
-    prefix: &str,
-    lane_label: &str,
-    input: &str,
-    lattice: &Lattice,
-    best_arcs: &BTreeSet<ArcKey>,
-    best_nodes: &BTreeSet<usize>,
-) {
-    dot.push_str(&format!("  subgraph cluster_{prefix} {{\n"));
-    dot.push_str("    style=\"rounded\";\n");
-    dot.push_str("    color=\"#ced4da\";\n");
-    dot.push_str("    label=\"");
-    dot.push_str(&format!("{lane_label}\\ninput={}", dot_escape(input)));
-    dot.push_str("\";\n");
-    for node in 0..lattice.node_count() {
-        let label = if node == lattice.start() {
-            "BOS".to_string()
-        } else if node == lattice.end() {
-            "EOS".to_string()
-        } else {
-            node.to_string()
-        };
-        let shape = if node == lattice.end() {
-            "doublecircle"
-        } else {
-            "circle"
-        };
-        let color = if best_nodes.contains(&node) {
-            ROMAJI_DOT_BEST_PATH_COLOR
-        } else {
-            ROMAJI_DOT_DEFAULT_NODE_COLOR
-        };
-        let penwidth = if best_nodes.contains(&node) {
-            "2.4"
-        } else {
-            "1.2"
-        };
-        dot.push_str(&format!(
-            "    {prefix}_{node} [label=\"{}\", shape={shape}, color=\"{color}\", penwidth={penwidth}];\n",
-            dot_escape(&label)
-        ));
-    }
-    for arc in lattice.arcs() {
-        let key = arc_key(arc.src, arc.dst, arc.symbol);
-        let is_best = best_arcs.contains(&key);
-        let color = if is_best {
-            ROMAJI_DOT_BEST_PATH_COLOR
-        } else {
-            ROMAJI_DOT_MUTED_EDGE_COLOR
-        };
-        let penwidth = if is_best { "3.0" } else { "1.1" };
-        dot.push_str(&format!(
-            "    {prefix}_{} -> {prefix}_{} [label=\"{}\", color=\"{color}\", fontcolor=\"{color}\", penwidth={penwidth}];\n",
-            arc.src,
-            arc.dst,
-            dot_escape(&symbol_to_string(arc.symbol))
-        ));
-    }
-    dot.push_str("  }\n");
-}
-
-type ArcKey = (usize, usize, Symbol);
-
-fn arc_key(src: usize, dst: usize, symbol: Symbol) -> ArcKey {
-    (src, dst, symbol)
-}
-
-fn best_arc_keys(lattice: &Lattice, symbols: &[Symbol]) -> BTreeSet<ArcKey> {
-    let mut path = Vec::new();
-    if find_arc_path(lattice, lattice.start(), symbols, 0, &mut path) {
-        path.into_iter().collect()
-    } else {
-        BTreeSet::new()
-    }
-}
-
-fn find_arc_path(
-    lattice: &Lattice,
-    node: usize,
-    symbols: &[Symbol],
-    symbol_idx: usize,
-    path: &mut Vec<ArcKey>,
-) -> bool {
-    if symbol_idx == symbols.len() {
-        return node == lattice.end();
-    }
-
-    for arc in lattice.outgoing_arcs(node) {
-        if arc.symbol != symbols[symbol_idx] {
-            continue;
-        }
-        path.push(arc_key(arc.src, arc.dst, arc.symbol));
-        if find_arc_path(lattice, arc.dst, symbols, symbol_idx + 1, path) {
-            return true;
-        }
-        path.pop();
-    }
-    false
-}
-
-fn best_nodes(best_arcs: &BTreeSet<ArcKey>) -> BTreeSet<usize> {
-    let mut nodes = BTreeSet::new();
-    for &(src, dst, _) in best_arcs {
-        nodes.insert(src);
-        nodes.insert(dst);
-    }
-    nodes
-}
-
-fn symbol_to_string(symbol: Symbol) -> String {
-    char::from_u32(symbol)
-        .unwrap_or(char::REPLACEMENT_CHARACTER)
-        .to_string()
-}
-
-fn dot_escape(value: &str) -> String {
-    let mut escaped = String::with_capacity(value.len());
-    for ch in value.chars() {
-        match ch {
-            '"' => escaped.push_str("\\\""),
-            '\\' => escaped.push_str("\\\\"),
-            '\n' => escaped.push_str("\\n"),
-            '\r' => {}
-            _ => escaped.push(ch),
-        }
-    }
-    escaped
 }
 
 pub(crate) fn format_reading_segments(segments: &[moine_ja::DictionaryReadingSegment]) -> String {
