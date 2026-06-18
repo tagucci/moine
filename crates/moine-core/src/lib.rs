@@ -28,6 +28,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::error::Error;
 use std::fmt;
 
+pub mod dot;
+
 /// Integer symbol stored on lattice arcs.
 ///
 /// String constructors encode each Unicode scalar value as one `Symbol`.

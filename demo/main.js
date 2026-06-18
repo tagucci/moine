@@ -1,4 +1,7 @@
+import { Graphviz } from "./vendor/graphviz.js";
 import init, { MoineDemo } from "./pkg/moine_wasm.js";
+
+const MAX_INPUT_CHARS = 15;
 
 const dictionaries = {
   ja: {
@@ -27,10 +30,14 @@ const els = {
   status: document.querySelector("#status"),
   levenshtein: document.querySelector("#levenshtein"),
   lped: document.querySelector("#lped"),
+  latticePanel: document.querySelector("#lattice-panel"),
+  latticeWarning: document.querySelector("#lattice-warning"),
+  latticeSvg: document.querySelector("#lattice-svg"),
   examples: document.querySelectorAll("[data-lang]"),
 };
 
 let demo;
+let graphviz;
 const loaded = new Set();
 
 function setStatus(message) {
@@ -45,6 +52,71 @@ function setResults(result) {
 function clearResults() {
   els.levenshtein.value = "-";
   els.lped.value = "-";
+  clearLatticeVisualization();
+}
+
+function clearLatticeVisualization() {
+  els.latticePanel.hidden = true;
+  els.latticeWarning.value = "";
+  els.latticeSvg.replaceChildren();
+}
+
+function inputTooLong(value) {
+  return Array.from(value).length > MAX_INPUT_CHARS;
+}
+
+function validateInputs(left, right) {
+  if (inputTooLong(left) || inputTooLong(right)) {
+    throw new Error(`Enter ${MAX_INPUT_CHARS} characters or fewer before comparing.`);
+  }
+}
+
+async function updateLatticeVisualization(lang, left, right) {
+  clearLatticeVisualization();
+  const result = latticeDot(lang, left, right);
+  if (!result) {
+    return;
+  }
+  els.latticePanel.hidden = false;
+  if (result.warning) {
+    els.latticeWarning.value = result.warning;
+    return;
+  }
+  if (!result.dot) {
+    return;
+  }
+
+  els.latticeSvg.replaceChildren(await renderDotSvg(result.dot));
+}
+
+function latticeDot(lang, left, right) {
+  if (lang === "ja") {
+    return demo.japaneseLatticeDot(left, right);
+  }
+  if (lang === "zh") {
+    return demo.chineseLatticeDot(left, right);
+  }
+  return null;
+}
+
+async function renderDotSvg(dot) {
+  const graphviz = await ensureGraphviz();
+  const svgText = graphviz.dot(dot);
+  const svg = new DOMParser().parseFromString(svgText, "image/svg+xml").documentElement;
+  if (svg.nodeName.toLowerCase() !== "svg") {
+    throw new Error("Graphviz did not return an SVG document");
+  }
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", "Lattice graph");
+  return document.importNode(svg, true);
+}
+
+async function ensureGraphviz() {
+  if (!graphviz) {
+    setStatus("Loading Graphviz...");
+    graphviz = await Graphviz.load();
+  }
+  return graphviz;
 }
 
 async function fetchText(path) {
@@ -83,9 +155,11 @@ async function compare() {
   els.compare.disabled = true;
   try {
     const lang = els.language.value;
+    validateInputs(els.left.value, els.right.value);
     await ensureDictionary(lang);
     const result = demo.compare(lang, els.left.value, els.right.value);
     setResults(result);
+    await updateLatticeVisualization(lang, els.left.value, els.right.value);
     setStatus("");
   } catch (error) {
     setStatus(error instanceof Error ? error.message : String(error));

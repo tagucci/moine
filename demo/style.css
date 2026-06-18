@@ -164,6 +164,44 @@ output {
   font-weight: 760;
 }
 
+.lattice-panel {
+  margin-top: 28px;
+  padding-top: 20px;
+}
+
+.lattice-panel-header {
+  display: flex;
+  gap: 16px;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+h2 {
+  margin: 0;
+  color: #3f3026;
+  font-size: 18px;
+  font-weight: 720;
+  letter-spacing: 0;
+}
+
+#lattice-warning {
+  color: #8c3527;
+  font-size: 13px;
+  text-align: right;
+}
+
+.lattice-svg {
+  overflow-x: auto;
+  padding: 8px 0 4px;
+}
+
+.lattice-svg svg {
+  display: block;
+  min-width: 640px;
+  height: auto;
+}
+
 @media (max-width: 760px) {
   .shell {
     width: min(100% - 24px, 960px);
@@ -177,5 +215,13 @@ output {
   .controls,
   .inputs {
     grid-template-columns: 1fr;
+  }
+
+  .lattice-panel-header {
+    display: grid;
+  }
+
+  #lattice-warning {
+    text-align: left;
   }
 }

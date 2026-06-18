@@ -3,6 +3,11 @@
 This directory contains a small static browser demo for comparing surface edit
 distance with Lattice Path Edit Distance.
 
+For Japanese and Chinese comparisons, the demo renders the same lattice DOT data
+used by the CLI lattice graph output. The Pages build self-hosts Graphviz WASM
+from [`@hpcc-js/wasm`](https://hpcc-systems.github.io/hpcc-js-wasm/) and uses it
+in the browser to render DOT as SVG.
+
 For GitHub Pages, the intended layout is:
 
 ```text
@@ -32,11 +37,13 @@ scripts/build-pages-site.sh
 ```
 
 The script builds the Zensical documentation site, builds `crates/moine-wasm`,
-generates `site/demo/pkg`, and copies local indexed dictionary artifacts from
-`dist/moine-unidic-cwj-202512` and `dist/moine-cedict-20260520` into
-`site/demo/dictionaries` when they are present. If local artifacts are missing,
-the script downloads the published release archives and copies the same files
-from them.
+generates `site/demo/pkg`, installs Graphviz WASM under `site/demo/vendor`, copies
+its package license alongside the generated asset, and copies local indexed
+dictionary artifacts from `dist/moine-unidic-cwj-202512` and
+`dist/moine-cedict-20260520` into `site/demo/dictionaries` when they are present
+and match the pinned release payload digests. If local artifacts are missing or
+stale, the script downloads the published release archives and copies the same
+files from them.
 
 ## Serve Locally
 
