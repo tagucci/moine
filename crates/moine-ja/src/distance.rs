@@ -143,7 +143,7 @@ fn should_try_hybrid_for_direct_ascii(
     input: &str,
     index: &UnidicReadingIndex,
 ) -> Result<bool, JaLatticeError> {
-    if !contains_ascii_alphanumeric(input) || !input.chars().any(|ch| !ch.is_ascii()) {
+    if !contains_ascii_alphanumeric(input) || input.is_ascii() {
         return Ok(false);
     }
 
