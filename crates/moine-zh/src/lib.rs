@@ -1391,25 +1391,25 @@ impl CedictReadingIndex {
 
             for end in start + 1..=end_limit {
                 let surface = &text[boundaries[start]..boundaries[end]];
-                if self.try_readings(surface)?.is_some() && !suffix_paths[end].is_empty() {
-                    matching_ends.push(end);
+                if !suffix_paths[end].is_empty() {
+                    if let Some(surface_readings) = self.try_readings(surface)? {
+                        matching_ends.push((end, surface_readings));
+                    }
                 }
             }
             stats.matched_spans += matching_ends.len();
 
             if options.longest_match_only {
-                if let Some(end) = matching_ends.last().copied() {
-                    stats.longest_match_pruned_spans += matching_ends.len().saturating_sub(1);
+                let pruned_spans = matching_ends.len().saturating_sub(1);
+                if let Some(longest_match) = matching_ends.pop() {
+                    stats.longest_match_pruned_spans += pruned_spans;
                     matching_ends.clear();
-                    matching_ends.push(end);
+                    matching_ends.push(longest_match);
                 }
             }
 
-            for end in matching_ends {
+            for (end, surface_readings) in matching_ends {
                 let surface = &text[boundaries[start]..boundaries[end]];
-                let Some(surface_readings) = self.try_readings(surface)? else {
-                    continue;
-                };
 
                 stats.raw_segment_readings += surface_readings.len();
                 let raw_surface_reading_count = surface_readings.len();

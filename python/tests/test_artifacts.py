@@ -290,11 +290,14 @@ def test_japanese_loader_rejects_missing_license_reference(tmp_path):
         moine.JapaneseDictionary.load_bundle(str(bundle))
 
 
-def test_large_python_distance_returns_error_instead_of_panicking():
+def test_large_python_distance_uses_linear_space_fast_path():
     text = "a" * 4000
 
-    with pytest.raises(ValueError, match="distance matrix"):
-        moine.distance(text, text)
+    assert moine.distance(text, text) == 0
+    assert moine.distance(text, "b" * 4000, score_cutoff=10) == 11
+    assert moine.damerau_distance(text, text) == 0
+    assert moine.damerau_distance(text, "b" * 4000, score_cutoff=10) == 11
+    assert moine.combined_distance(text, text) == 0
 
 
 def test_extract_archive_rejects_links(tmp_path):

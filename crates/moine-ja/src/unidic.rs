@@ -1472,25 +1472,25 @@ impl UnidicReadingIndex {
 
             for end in start + 1..=end_limit {
                 let surface = &text[boundaries[start]..boundaries[end]];
-                if self.try_readings(surface)?.is_some() && !suffix_paths[end].is_empty() {
-                    matching_ends.push(end);
+                if !suffix_paths[end].is_empty() {
+                    if let Some(surface_readings) = self.try_readings(surface)? {
+                        matching_ends.push((end, surface_readings));
+                    }
                 }
             }
             stats.matched_spans += matching_ends.len();
 
             if options.longest_match_only && !allow_direct_fallback {
-                if let Some(end) = matching_ends.last().copied() {
-                    stats.longest_match_pruned_spans += matching_ends.len().saturating_sub(1);
+                let pruned_spans = matching_ends.len().saturating_sub(1);
+                if let Some(longest_match) = matching_ends.pop() {
+                    stats.longest_match_pruned_spans += pruned_spans;
                     matching_ends.clear();
-                    matching_ends.push(end);
+                    matching_ends.push(longest_match);
                 }
             }
 
-            for end in matching_ends {
+            for (end, surface_readings) in matching_ends {
                 let surface = &text[boundaries[start]..boundaries[end]];
-                let Some(surface_readings) = self.try_readings(surface)? else {
-                    continue;
-                };
 
                 stats.raw_segment_readings += surface_readings.len();
                 let raw_surface_reading_count = surface_readings.len();
@@ -1617,26 +1617,24 @@ impl UnidicReadingIndex {
 
             for end in start + 1..=end_limit {
                 let surface = &text[boundaries[start]..boundaries[end]];
-                if self.try_readings(surface)?.is_some() && !suffix_paths[end].is_empty() {
-                    matching_ends.push(end);
+                if !suffix_paths[end].is_empty() {
+                    if let Some(surface_readings) = self.try_readings(surface)? {
+                        matching_ends.push((end, surface_readings));
+                    }
                 }
             }
             stats.matched_spans += matching_ends.len();
 
             if options.longest_match_only && !allow_direct_fallback {
-                if let Some(end) = matching_ends.last().copied() {
-                    stats.longest_match_pruned_spans += matching_ends.len().saturating_sub(1);
+                let pruned_spans = matching_ends.len().saturating_sub(1);
+                if let Some(longest_match) = matching_ends.pop() {
+                    stats.longest_match_pruned_spans += pruned_spans;
                     matching_ends.clear();
-                    matching_ends.push(end);
+                    matching_ends.push(longest_match);
                 }
             }
 
-            for end in matching_ends {
-                let surface = &text[boundaries[start]..boundaries[end]];
-                let Some(surface_readings) = self.try_readings(surface)? else {
-                    continue;
-                };
-
+            for (end, surface_readings) in matching_ends {
                 stats.raw_segment_readings += surface_readings.len();
                 let raw_surface_reading_count = surface_readings.len();
                 let surface_readings = limited_surface_readings(surface_readings.as_ref(), options);
@@ -1717,14 +1715,19 @@ impl UnidicReadingIndex {
         text: &str,
         options: DictionaryReadingOptions,
     ) -> Result<Option<Lattice>, JaLatticeError> {
-        let readings = self
-            .reading_sequences_with_stats_inner(text, options, false)
-            .map_err(|err| JaLatticeError::ArtifactPayload(err.to_string()))?;
-        if readings.paths.is_empty() {
+        let readings = if options.longest_match_only {
+            self.reading_sequences_longest_only(text, options)
+                .map_err(|err| JaLatticeError::ArtifactPayload(err.to_string()))?
+        } else {
+            self.reading_sequences_with_stats_inner(text, options, false)
+                .map_err(|err| JaLatticeError::ArtifactPayload(err.to_string()))?
+                .paths
+        };
+        if readings.is_empty() {
             return Ok(None);
         }
 
-        crate::romaji::romaji_lattice_from_readings(readings.paths).map(Some)
+        crate::romaji::romaji_lattice_from_supported_readings(readings)
     }
 
     /// Builds a romaji lattice with dictionary readings and direct fallback.
@@ -1743,7 +1746,59 @@ impl UnidicReadingIndex {
             return Ok(None);
         }
 
-        crate::romaji::romaji_lattice_from_readings(readings.paths).map(Some)
+        crate::romaji::romaji_lattice_from_supported_readings(readings.paths)
+    }
+
+    fn reading_sequences_longest_only(
+        &self,
+        text: &str,
+        options: DictionaryReadingOptions,
+    ) -> Result<Vec<String>, UnidicArtifactPayloadError> {
+        if text.is_empty() || options.max_span_chars == 0 || options.max_paths == 0 {
+            return Ok(Vec::new());
+        }
+
+        let boundaries = char_boundaries(text);
+        let char_len = boundaries.len() - 1;
+        let mut suffix_paths = vec![Vec::<String>::new(); char_len + 1];
+        suffix_paths[char_len].push(String::new());
+
+        for start in (0..char_len).rev() {
+            let mut paths_by_reading = BTreeSet::new();
+            let end_limit = char_len.min(start + options.max_span_chars);
+
+            for end in (start + 1..=end_limit).rev() {
+                if suffix_paths[end].is_empty() {
+                    continue;
+                }
+                let surface = &text[boundaries[start]..boundaries[end]];
+                let Some(surface_readings) = self.try_readings(surface)? else {
+                    continue;
+                };
+                let surface_readings = limited_surface_readings(surface_readings.as_ref(), options);
+                for surface_reading in surface_readings {
+                    for suffix in &suffix_paths[end] {
+                        let mut reading =
+                            String::with_capacity(surface_reading.len() + suffix.len());
+                        reading.push_str(surface_reading);
+                        reading.push_str(suffix);
+                        paths_by_reading.insert(reading);
+                        if paths_by_reading.len() >= options.max_paths {
+                            break;
+                        }
+                    }
+
+                    if paths_by_reading.len() >= options.max_paths {
+                        break;
+                    }
+                }
+                break;
+            }
+
+            suffix_paths[start] = paths_by_reading.into_iter().collect();
+        }
+
+        Ok(suffix_paths.remove(0))
     }
 }
 

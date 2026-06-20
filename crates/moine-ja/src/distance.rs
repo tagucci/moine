@@ -6,10 +6,10 @@ use moine_core::{
 };
 
 use crate::overrides::OverrideDictionary;
-use crate::romaji::{romaji_paths, JaLatticeError};
+use crate::romaji::{romaji_lattice, romaji_paths, JaLatticeError};
 use crate::unidic::{
     romaji_paths_from_reading_paths, DictionaryReadingOptions, DictionaryReadingPath,
-    UnidicReadingIndex,
+    DictionaryReadingSegment, DictionaryReadingSegmentSource, UnidicReadingIndex,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -72,6 +72,16 @@ pub fn unidic_or_direct_lattice(
     index: &UnidicReadingIndex,
     options: DictionaryReadingOptions,
 ) -> Result<Lattice, JaLatticeError> {
+    let contains_ascii = contains_ascii_alphanumeric(input);
+    if !contains_ascii {
+        if let Ok(lattice) = romaji_lattice(input) {
+            return Ok(lattice);
+        }
+        if let Some(lattice) = index.romaji_lattice(input, options)? {
+            return Ok(lattice);
+        }
+    }
+
     let paths = unidic_or_direct_romaji_paths(input, index, options)?;
     lattice_from_romaji_paths(paths)
 }
@@ -88,6 +98,15 @@ pub fn unidic_or_direct_romaji_paths(
             return Ok(direct_paths);
         }
         paths.extend(direct_paths);
+        extend_exact_dictionary_paths(&mut paths, input, index, options)?;
+        if should_try_hybrid_for_direct_ascii(input, index)? {
+            let hybrid_paths = index
+                .try_hybrid_reading_paths_with_stats(input, options)
+                .map_err(|err| JaLatticeError::ArtifactPayload(err.to_string()))?
+                .paths;
+            extend_supported_dictionary_paths(&mut paths, &hybrid_paths)?;
+        }
+        return Ok(paths.into_iter().collect());
     }
 
     let dictionary_paths = index
@@ -118,6 +137,81 @@ pub fn unidic_or_direct_romaji_paths(
 
 fn contains_ascii_alphanumeric(input: &str) -> bool {
     input.chars().any(|ch| ch.is_ascii_alphanumeric())
+}
+
+fn should_try_hybrid_for_direct_ascii(
+    input: &str,
+    index: &UnidicReadingIndex,
+) -> Result<bool, JaLatticeError> {
+    if !contains_ascii_alphanumeric(input) || !input.chars().any(|ch| !ch.is_ascii()) {
+        return Ok(false);
+    }
+
+    let mut run_start = None;
+    for (idx, ch) in input.char_indices() {
+        if ch.is_ascii_alphanumeric() {
+            run_start.get_or_insert(idx);
+        } else if let Some(start) = run_start.take() {
+            if is_hybrid_ascii_run_candidate(input, start, idx)
+                && has_dictionary_reading(&input[start..idx], index)?
+            {
+                return Ok(true);
+            }
+        }
+    }
+
+    if let Some(start) = run_start {
+        return Ok(is_hybrid_ascii_run_candidate(input, start, input.len())
+            && has_dictionary_reading(&input[start..], index)?);
+    }
+    Ok(false)
+}
+
+fn is_hybrid_ascii_run_candidate(input: &str, start: usize, end: usize) -> bool {
+    start == 0 || end < input.len() || end - start > 1
+}
+
+fn has_dictionary_reading(
+    surface: &str,
+    index: &UnidicReadingIndex,
+) -> Result<bool, JaLatticeError> {
+    index
+        .try_readings(surface)
+        .map(|readings| readings.is_some())
+        .map_err(|err| JaLatticeError::ArtifactPayload(err.to_string()))
+}
+
+fn extend_exact_dictionary_paths(
+    paths: &mut BTreeSet<String>,
+    surface: &str,
+    index: &UnidicReadingIndex,
+    options: DictionaryReadingOptions,
+) -> Result<(), JaLatticeError> {
+    let Some(surface_readings) = index
+        .try_readings(surface)
+        .map_err(|err| JaLatticeError::ArtifactPayload(err.to_string()))?
+    else {
+        return Ok(());
+    };
+    let surface_readings = if let Some(max_readings) = options.max_readings_per_segment {
+        &surface_readings[..surface_readings.len().min(max_readings)]
+    } else {
+        surface_readings.as_ref()
+    };
+    let reading_paths = surface_readings
+        .iter()
+        .map(|reading| DictionaryReadingPath {
+            segments: vec![DictionaryReadingSegment {
+                surface: surface.to_string(),
+                reading: reading.clone(),
+                source: DictionaryReadingSegmentSource::Dictionary,
+            }],
+            joined_reading: reading.clone(),
+        });
+    for path in reading_paths {
+        extend_supported_dictionary_paths(paths, std::slice::from_ref(&path))?;
+    }
+    Ok(())
 }
 
 fn extend_supported_dictionary_paths(
@@ -277,6 +371,55 @@ mod tests {
             let distances = compare_with_unidic_index(left, right, &index, options).unwrap();
             assert_eq!(distances.lattice, 0, "{left} should match {right}");
         }
+    }
+
+    #[test]
+    fn unidic_index_skips_unsupported_dictionary_readings_in_fast_lattice() {
+        let csv = "\
+酒,1,2,3,名詞,普通名詞,一般,*,*,*,サケ,酒,酒,サケ,酒,サケ,和
+酒,1,2,3,名詞,普通名詞,一般,*,*,*,シュ,酒,酒,シュ,酒,シュ,漢
+酒,1,2,3,名詞,普通名詞,一般,*,*,*,ヷ,酒,酒,ヷ,酒,ヷ,外
+";
+        let index = UnidicReadingIndex::from_lex_csv_reader(csv.as_bytes()).unwrap();
+
+        let distances =
+            compare_with_unidic_index("sake", "酒", &index, DictionaryReadingOptions::default())
+                .expect("unsupported dictionary readings should be skipped");
+
+        assert_eq!(distances.lattice, 0);
+    }
+
+    #[test]
+    fn unidic_index_keeps_hybrid_paths_for_ascii_whisky_terms() {
+        let csv = "\
+Ｍ,1,2,3,名詞,普通名詞,一般,*,*,*,モー,Ｍ,Ｍ,モー,Ｍ,モー,外
+ＰＸ,1,2,3,名詞,普通名詞,一般,*,*,*,ピーエックス,ＰＸ,ＰＸ,ピーエックス,ＰＸ,ピーエックス,外
+";
+        let index = UnidicReadingIndex::from_lex_csv_reader(csv.as_bytes()).unwrap();
+        let options = DictionaryReadingOptions::default();
+
+        for (left, right) in [
+            ("Mイン", "モーイン"),
+            ("PXシェリー", "ピーエックスシェリー"),
+        ] {
+            let distances = compare_with_unidic_index(left, right, &index, options)
+                .expect("ASCII whisky terms should still use dictionary hybrid paths");
+            assert_eq!(distances.lattice, 0, "{left} should match {right}");
+        }
+    }
+
+    #[test]
+    fn unidic_index_keeps_hybrid_paths_for_direct_ascii_with_suffix() {
+        let csv = "\
+ＷＨＩＳＫＹ,1,2,3,名詞,普通名詞,一般,*,*,*,ウイスキー,ＷＨＩＳＫＹ,ＷＨＩＳＫＹ,ウイスキー,ＷＨＩＳＫＹ,ウイスキー,外
+";
+        let index = UnidicReadingIndex::from_lex_csv_reader(csv.as_bytes()).unwrap();
+        let options = DictionaryReadingOptions::default();
+
+        let distances = compare_with_unidic_index("WHISKYバー", "ウイスキーバー", &index, options)
+            .expect("direct ASCII prefix should still use dictionary hybrid paths");
+
+        assert_eq!(distances.lattice, 0);
     }
 
     #[test]
