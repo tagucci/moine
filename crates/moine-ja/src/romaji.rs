@@ -116,6 +116,34 @@ where
     Ok(Lattice::from_symbol_paths_compact(paths))
 }
 
+pub(crate) fn romaji_lattice_from_supported_readings<I, S>(
+    readings: I,
+) -> Result<Option<Lattice>, JaLatticeError>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    let mut paths = Vec::new();
+    for reading in readings {
+        match romaji_symbol_paths_from_reading(reading.as_ref()) {
+            Ok(mut reading_paths) => paths.append(&mut reading_paths),
+            Err(err) if is_unsupported_reading_error(&err) => continue,
+            Err(err) => return Err(err),
+        }
+    }
+    if paths.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(Lattice::from_symbol_paths_compact(paths)))
+}
+
+fn is_unsupported_reading_error(err: &JaLatticeError) -> bool {
+    matches!(
+        err,
+        JaLatticeError::UnsupportedChar { .. } | JaLatticeError::MissingVariant { .. }
+    )
+}
+
 pub(crate) fn romaji_paths_from_segmented_readings<I, P, S>(
     reading_paths: I,
 ) -> Result<Vec<String>, JaLatticeError>
@@ -364,31 +392,68 @@ fn romaji_symbol_paths_from_units(units: &[Unit]) -> Result<Vec<Vec<Symbol>>, Ja
         }
 
         let mut consumed_units = 1;
-        let variants = if let Some(variants) = units
+        paths = if let Some(variants) = units
             .get(i + 1)
             .and_then(|next| ascii_small_kana_variants(&units[i], next))
         {
             consumed_units = 2;
-            variants
+            append_symbol_variants(paths, variants.iter().map(String::as_str))
         } else if matches!(&units[i], Unit::Kana(unit) if unit == "っ") {
-            sokuon_variants(units.get(i + 1))?
+            let variants = sokuon_variants(units.get(i + 1))?;
+            append_symbol_variants(paths, variants.iter().map(String::as_str))
         } else {
-            variants_for_unit(&units[i])?
+            append_symbol_unit(paths, &units[i])?
         };
 
-        let mut next_paths = Vec::with_capacity(paths.len() * variants.len());
-        for prefix in &paths {
-            for variant in &variants {
-                let mut path = Vec::with_capacity(prefix.len() + variant.chars().count());
-                path.extend_from_slice(prefix);
-                path.extend(variant.chars().map(|ch| ch as Symbol));
-                next_paths.push(path);
-            }
-        }
-        paths = next_paths;
         i += consumed_units;
     }
     Ok(paths)
+}
+
+fn append_symbol_unit(
+    paths: Vec<Vec<Symbol>>,
+    unit: &Unit,
+) -> Result<Vec<Vec<Symbol>>, JaLatticeError> {
+    match unit {
+        Unit::Ascii(ch) | Unit::NeutralLiteral(ch) => Ok(append_symbol(paths, *ch as Symbol)),
+        Unit::Kana(unit) => {
+            let variants = variants_for(unit)
+                .ok_or_else(|| JaLatticeError::MissingVariant { unit: unit.clone() })?;
+            Ok(append_symbol_variants_slice(paths, variants))
+        }
+    }
+}
+
+fn append_symbol(paths: Vec<Vec<Symbol>>, symbol: Symbol) -> Vec<Vec<Symbol>> {
+    let mut next_paths = Vec::with_capacity(paths.len());
+    for prefix in paths {
+        let mut path = Vec::with_capacity(prefix.len() + 1);
+        path.extend_from_slice(&prefix);
+        path.push(symbol);
+        next_paths.push(path);
+    }
+    next_paths
+}
+
+fn append_symbol_variants<'a, I>(paths: Vec<Vec<Symbol>>, variants: I) -> Vec<Vec<Symbol>>
+where
+    I: IntoIterator<Item = &'a str>,
+{
+    let variants = variants.into_iter().collect::<Vec<_>>();
+    append_symbol_variants_slice(paths, &variants)
+}
+
+fn append_symbol_variants_slice(paths: Vec<Vec<Symbol>>, variants: &[&str]) -> Vec<Vec<Symbol>> {
+    let mut next_paths = Vec::with_capacity(paths.len() * variants.len());
+    for prefix in paths {
+        for variant in variants {
+            let mut path = Vec::with_capacity(prefix.len() + variant.len());
+            path.extend_from_slice(&prefix);
+            path.extend(variant.chars().map(|ch| ch as Symbol));
+            next_paths.push(path);
+        }
+    }
+    next_paths
 }
 
 fn variants_for_unit(unit: &Unit) -> Result<Vec<String>, JaLatticeError> {

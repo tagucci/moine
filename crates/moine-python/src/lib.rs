@@ -1,10 +1,11 @@
 #![allow(clippy::too_many_arguments)]
 
 use moine_core::{
-    normalized_similarity_str, try_damerau_distance as lattice_try_damerau_distance,
-    try_damerau_levenshtein_str, try_distance as lattice_try_distance,
+    levenshtein_str, levenshtein_str_with_cutoff, normalized_similarity_from_distance,
+    try_damerau_levenshtein_str, try_damerau_levenshtein_str_with_cutoff,
     try_within_damerau_distance as lattice_try_within_damerau_distance,
-    try_within_distance as lattice_try_within_distance, Lattice,
+    try_within_distance as lattice_try_within_distance, DistanceWorkspace, Lattice,
+    StringDistanceWorkspace,
 };
 use moine_ja::{
     artifact_file_digest_path, normalized_similarity_with_unidic_index, unidic_or_direct_lattice,
@@ -49,9 +50,13 @@ fn raw_distance_pair_with_cutoff(
     right: &str,
     score_cutoff: Option<usize>,
 ) -> PyResult<usize> {
-    let left_lattice = Lattice::from_paths([left]);
-    let right_lattice = Lattice::from_paths([right]);
-    distance_with_cutoff(&left_lattice, &right_lattice, score_cutoff)
+    if let Some(cutoff) = score_cutoff {
+        return Ok(levenshtein_str_with_cutoff(left, right, cutoff).unwrap_or(cutoff + 1));
+    }
+    Ok(apply_distance_score_cutoff(
+        levenshtein_str(left, right),
+        score_cutoff,
+    ))
 }
 
 #[pyfunction(signature = (left, right, *, score_cutoff = None))]
@@ -71,9 +76,13 @@ fn raw_damerau_distance_pair_with_cutoff(
     right: &str,
     score_cutoff: Option<usize>,
 ) -> PyResult<usize> {
-    let left_lattice = Lattice::from_paths([left]);
-    let right_lattice = Lattice::from_paths([right]);
-    damerau_distance_with_cutoff(&left_lattice, &right_lattice, score_cutoff)
+    if let Some(cutoff) = score_cutoff {
+        return Ok(try_damerau_levenshtein_str_with_cutoff(left, right, cutoff)
+            .map_err(distance_error)?
+            .unwrap_or(cutoff + 1));
+    }
+    let distance = try_damerau_levenshtein_str(left, right).map_err(distance_error)?;
+    Ok(apply_distance_score_cutoff(distance, score_cutoff))
 }
 
 #[pyfunction(signature = (left, right, *, score_cutoff = None))]
@@ -94,9 +103,7 @@ fn raw_combined_distance_pair_with_cutoff(
     right: &str,
     score_cutoff: Option<usize>,
 ) -> PyResult<usize> {
-    let left_lattice = Lattice::from_paths([left]);
-    let right_lattice = Lattice::from_paths([right]);
-    combined_distance_with_cutoff(left, right, &left_lattice, &right_lattice, score_cutoff)
+    raw_damerau_distance_pair_with_cutoff(left, right, score_cutoff)
 }
 
 fn validate_distance_score_cutoff(
@@ -216,11 +223,7 @@ fn _cdist_distance(
     choices: Vec<String>,
     score_cutoff: Option<usize>,
 ) -> PyResult<Vec<Vec<usize>>> {
-    py.detach(move || {
-        let query_lattices = string_lattices(&queries);
-        let choice_lattices = string_lattices(&choices);
-        cdist_distance_matrix(&query_lattices, &choice_lattices, score_cutoff)
-    })
+    py.detach(move || cdist_string_distance_matrix(&queries, &choices, score_cutoff))
 }
 
 #[pyfunction(signature = (queries, choices, *, score_cutoff = None))]
@@ -230,11 +233,7 @@ fn _cdist_damerau_distance(
     choices: Vec<String>,
     score_cutoff: Option<usize>,
 ) -> PyResult<Vec<Vec<usize>>> {
-    py.detach(move || {
-        let query_lattices = string_lattices(&queries);
-        let choice_lattices = string_lattices(&choices);
-        cdist_damerau_distance_matrix(&query_lattices, &choice_lattices, score_cutoff)
-    })
+    py.detach(move || cdist_string_damerau_distance_matrix(&queries, &choices, score_cutoff))
 }
 
 #[pyfunction(signature = (queries, choices, *, score_cutoff = None))]
@@ -245,17 +244,7 @@ fn _cdist_combined_distance(
     score_cutoff: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<Vec<Vec<usize>>> {
     let score_cutoff = validate_distance_score_cutoff(score_cutoff)?;
-    py.detach(move || {
-        let query_lattices = string_lattices(&queries);
-        let choice_lattices = string_lattices(&choices);
-        cdist_combined_distance_matrix(
-            &queries,
-            &choices,
-            &query_lattices,
-            &choice_lattices,
-            score_cutoff,
-        )
-    })
+    py.detach(move || cdist_string_combined_distance_matrix(&queries, &choices, score_cutoff))
 }
 
 #[pyfunction(signature = (queries, choices, *, score_cutoff = None))]
@@ -265,22 +254,7 @@ fn _cdist_normalized_similarity(
     choices: Vec<String>,
     score_cutoff: Option<f64>,
 ) -> PyResult<Vec<Vec<f64>>> {
-    py.detach(move || {
-        queries
-            .iter()
-            .map(|query| {
-                choices
-                    .iter()
-                    .map(|choice| {
-                        apply_similarity_cutoff(
-                            raw_normalized_similarity_pair(query, choice),
-                            score_cutoff,
-                        )
-                    })
-                    .collect()
-            })
-            .collect()
-    })
+    py.detach(move || cdist_string_similarity_matrix(&queries, &choices, score_cutoff))
 }
 
 #[pyfunction(signature = (queries, choices, *, score_cutoff = None))]
@@ -290,22 +264,7 @@ fn _cdist_normalized_distance(
     choices: Vec<String>,
     score_cutoff: Option<f64>,
 ) -> PyResult<Vec<Vec<f64>>> {
-    py.detach(move || {
-        queries
-            .iter()
-            .map(|query| {
-                choices
-                    .iter()
-                    .map(|choice| {
-                        apply_normalized_distance_cutoff(
-                            raw_normalized_distance_pair(query, choice),
-                            score_cutoff,
-                        )
-                    })
-                    .collect()
-            })
-            .collect()
-    })
+    py.detach(move || cdist_string_normalized_distance_matrix(&queries, &choices, score_cutoff))
 }
 
 #[pyfunction(signature = (left_paths, right_paths, *, score_cutoff = None))]
@@ -2103,13 +2062,6 @@ fn text_spans(text: &str, max_span_chars: usize, include_empty: bool) -> TextSpa
     TextSpanIter::new(text, max_span_chars, include_empty)
 }
 
-fn string_lattices(strings: &[String]) -> Vec<Lattice> {
-    strings
-        .iter()
-        .map(|value| Lattice::from_paths([value.as_str()]))
-        .collect()
-}
-
 fn char_boundaries(text: &str) -> Vec<usize> {
     let mut boundaries = Vec::with_capacity(text.chars().count() + 1);
     boundaries.push(0);
@@ -2140,17 +2092,184 @@ fn ratio_alignment_is_better(
             ) < (current.dest_end - current.dest_start, current.dest_start))
 }
 
+fn char_sets(strings: &[String]) -> Vec<Vec<char>> {
+    strings
+        .iter()
+        .map(|value| value.chars().collect())
+        .collect()
+}
+
+fn string_distance_chars_with_cutoff(
+    left: &[char],
+    right: &[char],
+    score_cutoff: Option<usize>,
+    workspace: &mut StringDistanceWorkspace,
+) -> usize {
+    if let Some(cutoff) = score_cutoff {
+        return workspace
+            .levenshtein_with_cutoff(left, right, cutoff)
+            .unwrap_or(cutoff + 1);
+    }
+    workspace.levenshtein(left, right)
+}
+
+fn string_damerau_distance_chars_with_cutoff(
+    left: &[char],
+    right: &[char],
+    score_cutoff: Option<usize>,
+    workspace: &mut StringDistanceWorkspace,
+) -> usize {
+    if let Some(cutoff) = score_cutoff {
+        return workspace
+            .damerau_levenshtein_with_cutoff(left, right, cutoff)
+            .unwrap_or(cutoff + 1);
+    }
+    workspace.damerau_levenshtein(left, right)
+}
+
+fn normalized_similarity_chars(
+    left: &[char],
+    right: &[char],
+    workspace: &mut StringDistanceWorkspace,
+) -> f64 {
+    normalized_similarity_from_distance(workspace.levenshtein(left, right), left.len(), right.len())
+}
+
+fn cdist_string_distance_matrix(
+    queries: &[String],
+    choices: &[String],
+    score_cutoff: Option<usize>,
+) -> PyResult<Vec<Vec<usize>>> {
+    let query_chars = char_sets(queries);
+    let choice_chars = char_sets(choices);
+    let mut workspace = StringDistanceWorkspace::new();
+    Ok(query_chars
+        .iter()
+        .map(|query| {
+            choice_chars
+                .iter()
+                .map(|choice| {
+                    string_distance_chars_with_cutoff(query, choice, score_cutoff, &mut workspace)
+                })
+                .collect()
+        })
+        .collect())
+}
+
+fn cdist_string_damerau_distance_matrix(
+    queries: &[String],
+    choices: &[String],
+    score_cutoff: Option<usize>,
+) -> PyResult<Vec<Vec<usize>>> {
+    let query_chars = char_sets(queries);
+    let choice_chars = char_sets(choices);
+    let mut workspace = StringDistanceWorkspace::new();
+    Ok(query_chars
+        .iter()
+        .map(|query| {
+            choice_chars
+                .iter()
+                .map(|choice| {
+                    string_damerau_distance_chars_with_cutoff(
+                        query,
+                        choice,
+                        score_cutoff,
+                        &mut workspace,
+                    )
+                })
+                .collect()
+        })
+        .collect())
+}
+
+fn cdist_string_combined_distance_matrix(
+    queries: &[String],
+    choices: &[String],
+    score_cutoff: Option<usize>,
+) -> PyResult<Vec<Vec<usize>>> {
+    let query_chars = char_sets(queries);
+    let choice_chars = char_sets(choices);
+    let mut workspace = StringDistanceWorkspace::new();
+    Ok(query_chars
+        .iter()
+        .map(|query| {
+            choice_chars
+                .iter()
+                .map(|choice| {
+                    string_damerau_distance_chars_with_cutoff(
+                        query,
+                        choice,
+                        score_cutoff,
+                        &mut workspace,
+                    )
+                })
+                .collect()
+        })
+        .collect())
+}
+
+fn cdist_string_similarity_matrix(
+    queries: &[String],
+    choices: &[String],
+    score_cutoff: Option<f64>,
+) -> PyResult<Vec<Vec<f64>>> {
+    let query_chars = char_sets(queries);
+    let choice_chars = char_sets(choices);
+    let mut workspace = StringDistanceWorkspace::new();
+    query_chars
+        .iter()
+        .map(|query| {
+            choice_chars
+                .iter()
+                .map(|choice| {
+                    apply_similarity_cutoff(
+                        normalized_similarity_chars(query, choice, &mut workspace),
+                        score_cutoff,
+                    )
+                })
+                .collect()
+        })
+        .collect()
+}
+
+fn cdist_string_normalized_distance_matrix(
+    queries: &[String],
+    choices: &[String],
+    score_cutoff: Option<f64>,
+) -> PyResult<Vec<Vec<f64>>> {
+    let query_chars = char_sets(queries);
+    let choice_chars = char_sets(choices);
+    let mut workspace = StringDistanceWorkspace::new();
+    query_chars
+        .iter()
+        .map(|query| {
+            choice_chars
+                .iter()
+                .map(|choice| {
+                    apply_normalized_distance_cutoff(
+                        1.0 - normalized_similarity_chars(query, choice, &mut workspace),
+                        score_cutoff,
+                    )
+                })
+                .collect()
+        })
+        .collect()
+}
+
 fn cdist_distance_matrix(
     query_lattices: &[Lattice],
     choice_lattices: &[Lattice],
     score_cutoff: Option<usize>,
 ) -> PyResult<Vec<Vec<usize>>> {
+    let mut workspace = DistanceWorkspace::new();
     query_lattices
         .iter()
         .map(|query| {
             choice_lattices
                 .iter()
-                .map(|choice| distance_with_cutoff(query, choice, score_cutoff))
+                .map(|choice| {
+                    distance_with_cutoff_workspace(query, choice, score_cutoff, &mut workspace)
+                })
                 .collect()
         })
         .collect()
@@ -2161,12 +2280,20 @@ fn cdist_damerau_distance_matrix(
     choice_lattices: &[Lattice],
     score_cutoff: Option<usize>,
 ) -> PyResult<Vec<Vec<usize>>> {
+    let mut workspace = DistanceWorkspace::new();
     query_lattices
         .iter()
         .map(|query| {
             choice_lattices
                 .iter()
-                .map(|choice| damerau_distance_with_cutoff(query, choice, score_cutoff))
+                .map(|choice| {
+                    damerau_distance_with_cutoff_workspace(
+                        query,
+                        choice,
+                        score_cutoff,
+                        &mut workspace,
+                    )
+                })
                 .collect()
         })
         .collect()
@@ -2179,20 +2306,26 @@ fn cdist_combined_distance_matrix(
     choice_lattices: &[Lattice],
     score_cutoff: Option<usize>,
 ) -> PyResult<Vec<Vec<usize>>> {
-    queries
+    let query_chars = char_sets(queries);
+    let choice_chars = char_sets(choices);
+    let mut lattice_workspace = DistanceWorkspace::new();
+    let mut string_workspace = StringDistanceWorkspace::new();
+    query_chars
         .iter()
         .zip(query_lattices.iter())
         .map(|(query, query_lattice)| {
-            choices
+            choice_chars
                 .iter()
                 .zip(choice_lattices.iter())
                 .map(|(choice, choice_lattice)| {
-                    combined_distance_with_cutoff(
+                    combined_distance_chars_with_cutoff_workspace(
                         query,
                         choice,
                         query_lattice,
                         choice_lattice,
                         score_cutoff,
+                        &mut lattice_workspace,
+                        &mut string_workspace,
                     )
                 })
                 .collect()
@@ -2240,7 +2373,9 @@ fn cdist_normalized_distance_matrix(
 }
 
 fn raw_normalized_similarity_pair(left: &str, right: &str) -> f64 {
-    normalized_similarity_str(left, right)
+    let left = left.chars().collect::<Vec<_>>();
+    let right = right.chars().collect::<Vec<_>>();
+    normalized_similarity_chars(&left, &right, &mut StringDistanceWorkspace::new())
 }
 
 fn raw_normalized_distance_pair(left: &str, right: &str) -> f64 {
@@ -2252,14 +2387,34 @@ fn distance_with_cutoff(
     right_lattice: &Lattice,
     score_cutoff: Option<usize>,
 ) -> PyResult<usize> {
+    let mut workspace = DistanceWorkspace::new();
+    distance_with_cutoff_workspace(left_lattice, right_lattice, score_cutoff, &mut workspace)
+}
+
+fn distance_with_cutoff_workspace(
+    left_lattice: &Lattice,
+    right_lattice: &Lattice,
+    score_cutoff: Option<usize>,
+    workspace: &mut DistanceWorkspace,
+) -> PyResult<usize> {
     if let Some(cutoff) = score_cutoff {
-        if !lattice_try_within_distance(left_lattice, right_lattice, cutoff)
+        return Ok(workspace
+            .try_distance_with_cutoff(left_lattice, right_lattice, cutoff)
             .map_err(distance_error)?
-        {
-            return Ok(cutoff + 1);
+            .unwrap_or(cutoff + 1));
+    }
+    workspace
+        .try_distance(left_lattice, right_lattice)
+        .map_err(distance_error)
+}
+
+fn apply_distance_score_cutoff(distance: usize, score_cutoff: Option<usize>) -> usize {
+    if let Some(cutoff) = score_cutoff {
+        if distance > cutoff {
+            return cutoff + 1;
         }
     }
-    lattice_try_distance(left_lattice, right_lattice).map_err(distance_error)
+    distance
 }
 
 fn combined_distance_with_cutoff(
@@ -2269,15 +2424,58 @@ fn combined_distance_with_cutoff(
     right_lattice: &Lattice,
     score_cutoff: Option<usize>,
 ) -> PyResult<usize> {
-    let surface_damerau = try_damerau_levenshtein_str(left, right).map_err(distance_error)?;
-    let lattice = distance_with_cutoff(left_lattice, right_lattice, score_cutoff)?;
+    let mut workspace = DistanceWorkspace::new();
+    combined_distance_with_cutoff_workspace(
+        left,
+        right,
+        left_lattice,
+        right_lattice,
+        score_cutoff,
+        &mut workspace,
+    )
+}
+
+fn combined_distance_with_cutoff_workspace(
+    left: &str,
+    right: &str,
+    left_lattice: &Lattice,
+    right_lattice: &Lattice,
+    score_cutoff: Option<usize>,
+    workspace: &mut DistanceWorkspace,
+) -> PyResult<usize> {
+    let left_chars = left.chars().collect::<Vec<_>>();
+    let right_chars = right.chars().collect::<Vec<_>>();
+    let mut string_workspace = StringDistanceWorkspace::new();
+    combined_distance_chars_with_cutoff_workspace(
+        &left_chars,
+        &right_chars,
+        left_lattice,
+        right_lattice,
+        score_cutoff,
+        workspace,
+        &mut string_workspace,
+    )
+}
+
+fn combined_distance_chars_with_cutoff_workspace(
+    left: &[char],
+    right: &[char],
+    left_lattice: &Lattice,
+    right_lattice: &Lattice,
+    score_cutoff: Option<usize>,
+    lattice_workspace: &mut DistanceWorkspace,
+    string_workspace: &mut StringDistanceWorkspace,
+) -> PyResult<usize> {
+    let surface_damerau =
+        string_damerau_distance_chars_with_cutoff(left, right, score_cutoff, string_workspace);
+    let lattice = distance_with_cutoff_workspace(
+        left_lattice,
+        right_lattice,
+        score_cutoff,
+        lattice_workspace,
+    )?;
     let combined = surface_damerau.min(lattice);
-    if let Some(cutoff) = score_cutoff {
-        if combined > cutoff {
-            return Ok(cutoff + 1);
-        }
-    }
-    Ok(combined)
+    Ok(apply_distance_score_cutoff(combined, score_cutoff))
 }
 
 fn damerau_distance_with_cutoff(
@@ -2285,14 +2483,30 @@ fn damerau_distance_with_cutoff(
     right_lattice: &Lattice,
     score_cutoff: Option<usize>,
 ) -> PyResult<usize> {
+    let mut workspace = DistanceWorkspace::new();
+    damerau_distance_with_cutoff_workspace(
+        left_lattice,
+        right_lattice,
+        score_cutoff,
+        &mut workspace,
+    )
+}
+
+fn damerau_distance_with_cutoff_workspace(
+    left_lattice: &Lattice,
+    right_lattice: &Lattice,
+    score_cutoff: Option<usize>,
+    workspace: &mut DistanceWorkspace,
+) -> PyResult<usize> {
     if let Some(cutoff) = score_cutoff {
-        if !lattice_try_within_damerau_distance(left_lattice, right_lattice, cutoff)
+        return Ok(workspace
+            .try_damerau_distance_with_cutoff(left_lattice, right_lattice, cutoff)
             .map_err(distance_error)?
-        {
-            return Ok(cutoff + 1);
-        }
+            .unwrap_or(cutoff + 1));
     }
-    lattice_try_damerau_distance(left_lattice, right_lattice).map_err(distance_error)
+    workspace
+        .try_damerau_distance(left_lattice, right_lattice)
+        .map_err(distance_error)
 }
 
 fn distance_error(err: moine_core::DistanceError) -> PyErr {
@@ -2380,6 +2594,25 @@ mod tests {
             assert_eq!(
                 combined_distance(py, "abc", "acb", Some(zero.as_any())).unwrap(),
                 1
+            );
+            assert_eq!(
+                _cdist_distance(py, vec!["abc".into()], vec!["adc".into()], Some(0)).unwrap(),
+                vec![vec![1]]
+            );
+            assert_eq!(
+                _cdist_damerau_distance(py, vec!["abc".into()], vec!["acb".into()], Some(0))
+                    .unwrap(),
+                vec![vec![1]]
+            );
+            assert_eq!(
+                _cdist_combined_distance(
+                    py,
+                    vec!["abc".into()],
+                    vec!["acb".into()],
+                    Some(zero.as_any())
+                )
+                .unwrap(),
+                vec![vec![1]]
             );
             let bool_cutoff = true.into_pyobject(py).unwrap();
             assert!(

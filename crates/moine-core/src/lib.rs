@@ -5,12 +5,14 @@
 //! Japanese, Chinese, Unicode-normalization, dictionary, CLI, or artifact
 //! loading logic.
 //!
-//! Use [`try_distance`], [`try_damerau_distance`], [`try_distance_with_trace`],
-//! [`try_within_distance`], and [`try_within_damerau_distance`] when lattices
-//! come from external input. The infallible convenience functions keep examples
-//! short, but panic if the configured matrix limits would be exceeded. Trace
-//! reconstruction stores more per cell than the plain distance path, so it uses
-//! the lower [`MAX_TRACE_MATRIX_CELLS`] limit.
+//! Use [`try_distance`], [`try_distance_with_cutoff`],
+//! [`try_damerau_distance`], [`try_damerau_distance_with_cutoff`],
+//! [`try_distance_with_trace`], [`try_within_distance`], and
+//! [`try_within_damerau_distance`] when lattices come from external input. The
+//! infallible lattice convenience functions keep examples short, but panic if
+//! the configured matrix limits would be exceeded. Trace reconstruction stores
+//! more per cell than the plain distance path, so it uses the lower
+//! [`MAX_TRACE_MATRIX_CELLS`] limit.
 //!
 //! ```
 //! use moine_core::{distance, try_distance, Lattice};
@@ -639,6 +641,150 @@ struct Backpointer {
 
 const INF: usize = usize::MAX / 4;
 
+/// Reusable buffers for repeated lattice distance computations.
+///
+/// The plain convenience functions allocate temporary buffers for each call.
+/// Use this workspace when scoring many lattice pairs, such as inside a
+/// candidate matrix, to reuse the DP and threshold-search allocations while
+/// preserving the same exact results.
+#[derive(Debug, Default)]
+pub struct DistanceWorkspace {
+    dp: Vec<usize>,
+    queued: Vec<bool>,
+    queue: VecDeque<(usize, usize)>,
+}
+
+impl DistanceWorkspace {
+    /// Creates an empty distance workspace.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Computes lattice edit distance using this workspace.
+    pub fn try_distance(
+        &mut self,
+        left: &Lattice,
+        right: &Lattice,
+    ) -> Result<usize, DistanceError> {
+        let rows = left.node_count();
+        let cols = right.node_count();
+        let cells = checked_distance_matrix_cells(rows, cols)?;
+        Ok(distance_impl(left, right, cells, self))
+    }
+
+    /// Computes lattice edit distance up to `threshold` using this workspace.
+    pub fn try_distance_with_cutoff(
+        &mut self,
+        left: &Lattice,
+        right: &Lattice,
+        threshold: usize,
+    ) -> Result<Option<usize>, DistanceError> {
+        let rows = left.node_count();
+        let cols = right.node_count();
+        let cells = checked_distance_matrix_cells(rows, cols)?;
+        Ok(cutoff_distance_impl(left, right, threshold, cells, self))
+    }
+
+    /// Computes lattice Damerau-Levenshtein distance using this workspace.
+    pub fn try_damerau_distance(
+        &mut self,
+        left: &Lattice,
+        right: &Lattice,
+    ) -> Result<usize, DistanceError> {
+        let rows = left.node_count();
+        let cols = right.node_count();
+        let cells = checked_distance_matrix_cells(rows, cols)?;
+        Ok(damerau_distance_impl(left, right, cells, self))
+    }
+
+    /// Computes lattice Damerau-Levenshtein distance up to `threshold` using
+    /// this workspace.
+    pub fn try_damerau_distance_with_cutoff(
+        &mut self,
+        left: &Lattice,
+        right: &Lattice,
+        threshold: usize,
+    ) -> Result<Option<usize>, DistanceError> {
+        let rows = left.node_count();
+        let cols = right.node_count();
+        let cells = checked_distance_matrix_cells(rows, cols)?;
+        Ok(cutoff_damerau_distance_impl(
+            left, right, threshold, cells, self,
+        ))
+    }
+
+    fn reset_dp(&mut self, cells: usize) {
+        self.dp.clear();
+        self.dp.resize(cells, INF);
+    }
+
+    fn reset_threshold_search(&mut self, cells: usize) {
+        self.reset_dp(cells);
+        self.queued.clear();
+        self.queued.resize(cells, false);
+        self.queue.clear();
+    }
+}
+
+/// Reusable buffers for plain Unicode-scalar string distance computations.
+///
+/// The `*_str` helpers tokenize inputs and allocate temporary DP rows on each
+/// call. Use this workspace with pre-tokenized `char` slices when scoring many
+/// plain string pairs, such as a candidate matrix.
+#[derive(Debug, Default)]
+pub struct StringDistanceWorkspace {
+    previous2: Vec<usize>,
+    previous: Vec<usize>,
+    current: Vec<usize>,
+}
+
+impl StringDistanceWorkspace {
+    /// Creates an empty plain-string distance workspace.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Computes Levenshtein distance over Unicode scalar value slices.
+    pub fn levenshtein(&mut self, left: &[char], right: &[char]) -> usize {
+        let (left, right) = trim_common_affixes(left, right);
+        levenshtein_chars_impl(left, right, self)
+    }
+
+    /// Computes Levenshtein distance up to `threshold`.
+    ///
+    /// Returns `Some(distance)` when the exact distance is at most
+    /// `threshold`, and `None` when the distance is greater than `threshold`.
+    pub fn levenshtein_with_cutoff(
+        &mut self,
+        left: &[char],
+        right: &[char],
+        threshold: usize,
+    ) -> Option<usize> {
+        let (left, right) = trim_common_affixes(left, right);
+        levenshtein_chars_with_cutoff_impl(left, right, threshold, self)
+    }
+
+    /// Computes optimal string alignment Damerau-Levenshtein distance over
+    /// Unicode scalar value slices.
+    pub fn damerau_levenshtein(&mut self, left: &[char], right: &[char]) -> usize {
+        damerau_levenshtein_chars_impl(left, right, self)
+    }
+
+    /// Computes optimal string alignment Damerau-Levenshtein distance up to
+    /// `threshold`.
+    ///
+    /// Returns `Some(distance)` when the exact distance is at most
+    /// `threshold`, and `None` when the distance is greater than `threshold`.
+    pub fn damerau_levenshtein_with_cutoff(
+        &mut self,
+        left: &[char],
+        right: &[char],
+        threshold: usize,
+    ) -> Option<usize> {
+        damerau_levenshtein_chars_with_cutoff_impl(left, right, threshold, self)
+    }
+}
+
 /// Computes lattice edit distance.
 ///
 /// # Panics
@@ -651,15 +797,32 @@ pub fn distance(left: &Lattice, right: &Lattice) -> usize {
 
 /// Computes lattice edit distance with explicit matrix-size validation.
 pub fn try_distance(left: &Lattice, right: &Lattice) -> Result<usize, DistanceError> {
-    let rows = left.node_count();
-    let cols = right.node_count();
-    let cells = checked_distance_matrix_cells(rows, cols)?;
-    Ok(distance_impl(left, right, cells))
+    DistanceWorkspace::new().try_distance(left, right)
 }
 
-fn distance_impl(left: &Lattice, right: &Lattice, cells: usize) -> usize {
+/// Computes lattice edit distance up to `threshold`.
+///
+/// Returns `Ok(Some(distance))` when the exact distance is at most
+/// `threshold`, and `Ok(None)` when the distance is greater than `threshold`.
+/// This is useful for cutoff-style scoring because callers can avoid a separate
+/// [`try_within_distance`] pass followed by a full [`try_distance`] pass.
+pub fn try_distance_with_cutoff(
+    left: &Lattice,
+    right: &Lattice,
+    threshold: usize,
+) -> Result<Option<usize>, DistanceError> {
+    DistanceWorkspace::new().try_distance_with_cutoff(left, right, threshold)
+}
+
+fn distance_impl(
+    left: &Lattice,
+    right: &Lattice,
+    cells: usize,
+    workspace: &mut DistanceWorkspace,
+) -> usize {
     let cols = right.node_count();
-    let mut dp = vec![INF; cells];
+    workspace.reset_dp(cells);
+    let dp = workspace.dp.as_mut_slice();
     dp[distance_index(left.start(), right.start(), cols)] = 0;
 
     for i in left.start()..=left.end() {
@@ -709,15 +872,33 @@ pub fn damerau_distance(left: &Lattice, right: &Lattice) -> usize {
 /// Computes lattice edit distance with adjacent transpositions and explicit
 /// matrix-size validation.
 pub fn try_damerau_distance(left: &Lattice, right: &Lattice) -> Result<usize, DistanceError> {
-    let rows = left.node_count();
-    let cols = right.node_count();
-    let cells = checked_distance_matrix_cells(rows, cols)?;
-    Ok(damerau_distance_impl(left, right, cells))
+    DistanceWorkspace::new().try_damerau_distance(left, right)
 }
 
-fn damerau_distance_impl(left: &Lattice, right: &Lattice, cells: usize) -> usize {
+/// Computes lattice Damerau-Levenshtein distance up to `threshold`.
+///
+/// Returns `Ok(Some(distance))` when the exact distance is at most
+/// `threshold`, and `Ok(None)` when the distance is greater than `threshold`.
+/// This is useful for cutoff-style scoring because callers can avoid a separate
+/// [`try_within_damerau_distance`] pass followed by a full
+/// [`try_damerau_distance`] pass.
+pub fn try_damerau_distance_with_cutoff(
+    left: &Lattice,
+    right: &Lattice,
+    threshold: usize,
+) -> Result<Option<usize>, DistanceError> {
+    DistanceWorkspace::new().try_damerau_distance_with_cutoff(left, right, threshold)
+}
+
+fn damerau_distance_impl(
+    left: &Lattice,
+    right: &Lattice,
+    cells: usize,
+    workspace: &mut DistanceWorkspace,
+) -> usize {
     let cols = right.node_count();
-    let mut dp = vec![INF; cells];
+    workspace.reset_dp(cells);
+    let dp = workspace.dp.as_mut_slice();
     dp[distance_index(left.start(), right.start(), cols)] = 0;
 
     for i in left.start()..=left.end() {
@@ -921,19 +1102,18 @@ pub fn try_within_distance(
 
 fn within_distance_impl(left: &Lattice, right: &Lattice, threshold: usize, cells: usize) -> bool {
     let cols = right.node_count();
-    let mut dp = vec![INF; cells];
-    let mut queued = vec![false; cells];
-    let mut queue = VecDeque::new();
+    let mut workspace = DistanceWorkspace::new();
+    workspace.reset_threshold_search(cells);
     let start = distance_index(left.start(), right.start(), cols);
-    dp[start] = 0;
-    queued[start] = true;
-    queue.push_back((left.start(), right.start()));
+    workspace.dp[start] = 0;
+    workspace.queued[start] = true;
+    workspace.queue.push_back((left.start(), right.start()));
     let mut search = ThresholdSearch {
         threshold,
         cols,
-        dp: &mut dp,
-        queued: &mut queued,
-        queue: &mut queue,
+        dp: &mut workspace.dp,
+        queued: &mut workspace.queued,
+        queue: &mut workspace.queue,
     };
 
     while let Some((i, j)) = search.queue.pop_front() {
@@ -964,6 +1144,55 @@ fn within_distance_impl(left: &Lattice, right: &Lattice, threshold: usize, cells
     }
 
     false
+}
+
+fn cutoff_distance_impl(
+    left: &Lattice,
+    right: &Lattice,
+    threshold: usize,
+    cells: usize,
+    workspace: &mut DistanceWorkspace,
+) -> Option<usize> {
+    let cols = right.node_count();
+    workspace.reset_threshold_search(cells);
+    let start = distance_index(left.start(), right.start(), cols);
+    workspace.dp[start] = 0;
+    workspace.queued[start] = true;
+    workspace.queue.push_back((left.start(), right.start()));
+    let mut search = ThresholdSearch {
+        threshold,
+        cols,
+        dp: &mut workspace.dp,
+        queued: &mut workspace.queued,
+        queue: &mut workspace.queue,
+    };
+
+    while let Some((i, j)) = search.queue.pop_front() {
+        let index = distance_index(i, j, cols);
+        search.queued[index] = false;
+        let current = search.dp[index];
+        if current > threshold {
+            continue;
+        }
+
+        for right_arc in right.outgoing_arcs(j) {
+            search.relax(i, right_arc.dst, current.saturating_add(1));
+        }
+
+        for left_arc in left.outgoing_arcs(i) {
+            search.relax(left_arc.dst, j, current.saturating_add(1));
+        }
+
+        for left_arc in left.outgoing_arcs(i) {
+            for right_arc in right.outgoing_arcs(j) {
+                let cost = usize::from(left_arc.symbol != right_arc.symbol);
+                search.relax(left_arc.dst, right_arc.dst, current.saturating_add(cost));
+            }
+        }
+    }
+
+    let distance = search.dp[distance_index(left.end(), right.end(), cols)];
+    (distance <= threshold).then_some(distance)
 }
 
 /// Returns whether lattice Damerau-Levenshtein distance is at most
@@ -998,19 +1227,18 @@ fn within_damerau_distance_impl(
     cells: usize,
 ) -> bool {
     let cols = right.node_count();
-    let mut dp = vec![INF; cells];
-    let mut queued = vec![false; cells];
-    let mut queue = VecDeque::new();
+    let mut workspace = DistanceWorkspace::new();
+    workspace.reset_threshold_search(cells);
     let start = distance_index(left.start(), right.start(), cols);
-    dp[start] = 0;
-    queued[start] = true;
-    queue.push_back((left.start(), right.start()));
+    workspace.dp[start] = 0;
+    workspace.queued[start] = true;
+    workspace.queue.push_back((left.start(), right.start()));
     let mut search = ThresholdSearch {
         threshold,
         cols,
-        dp: &mut dp,
-        queued: &mut queued,
-        queue: &mut queue,
+        dp: &mut workspace.dp,
+        queued: &mut workspace.queued,
+        queue: &mut workspace.queue,
     };
 
     while let Some((i, j)) = search.queue.pop_front() {
@@ -1059,6 +1287,73 @@ fn within_damerau_distance_impl(
     }
 
     false
+}
+
+fn cutoff_damerau_distance_impl(
+    left: &Lattice,
+    right: &Lattice,
+    threshold: usize,
+    cells: usize,
+    workspace: &mut DistanceWorkspace,
+) -> Option<usize> {
+    let cols = right.node_count();
+    workspace.reset_threshold_search(cells);
+    let start = distance_index(left.start(), right.start(), cols);
+    workspace.dp[start] = 0;
+    workspace.queued[start] = true;
+    workspace.queue.push_back((left.start(), right.start()));
+    let mut search = ThresholdSearch {
+        threshold,
+        cols,
+        dp: &mut workspace.dp,
+        queued: &mut workspace.queued,
+        queue: &mut workspace.queue,
+    };
+
+    while let Some((i, j)) = search.queue.pop_front() {
+        let index = distance_index(i, j, cols);
+        search.queued[index] = false;
+        let current = search.dp[index];
+        if current > threshold {
+            continue;
+        }
+
+        for right_arc in right.outgoing_arcs(j) {
+            search.relax(i, right_arc.dst, current.saturating_add(1));
+        }
+
+        for left_arc in left.outgoing_arcs(i) {
+            search.relax(left_arc.dst, j, current.saturating_add(1));
+        }
+
+        for left_arc in left.outgoing_arcs(i) {
+            for right_arc in right.outgoing_arcs(j) {
+                let cost = usize::from(left_arc.symbol != right_arc.symbol);
+                search.relax(left_arc.dst, right_arc.dst, current.saturating_add(cost));
+            }
+        }
+
+        for left_first in left.outgoing_arcs(i) {
+            for right_first in right.outgoing_arcs(j) {
+                for left_second in left.outgoing_arcs(left_first.dst) {
+                    for right_second in right.outgoing_arcs(right_first.dst) {
+                        if left_first.symbol == right_second.symbol
+                            && left_second.symbol == right_first.symbol
+                        {
+                            search.relax(
+                                left_second.dst,
+                                right_second.dst,
+                                current.saturating_add(1),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let distance = search.dp[distance_index(left.end(), right.end(), cols)];
+    (distance <= threshold).then_some(distance)
 }
 
 fn checked_distance_matrix_cells(rows: usize, cols: usize) -> Result<usize, DistanceError> {
@@ -1138,91 +1433,245 @@ pub fn normalized_similarity_from_distance(
 
 /// Computes normalized Levenshtein similarity for two strings.
 pub fn normalized_similarity_str(left: &str, right: &str) -> f64 {
-    normalized_similarity_from_distance(
-        levenshtein_str(left, right),
-        left.chars().count(),
-        right.chars().count(),
-    )
+    let left = left.chars().collect::<Vec<_>>();
+    let right = right.chars().collect::<Vec<_>>();
+    let mut workspace = StringDistanceWorkspace::new();
+    normalized_similarity_chars(&left, &right, &mut workspace)
 }
 
 /// Computes Levenshtein distance over Unicode scalar values.
 pub fn levenshtein_str(left: &str, right: &str) -> usize {
     let left = left.chars().collect::<Vec<_>>();
     let right = right.chars().collect::<Vec<_>>();
-    levenshtein_chars(&left, &right)
+    StringDistanceWorkspace::new().levenshtein(&left, &right)
+}
+
+/// Computes Levenshtein distance over Unicode scalar values up to `threshold`.
+///
+/// Returns `Some(distance)` when the exact distance is at most `threshold`,
+/// and `None` when the distance is greater than `threshold`.
+pub fn levenshtein_str_with_cutoff(left: &str, right: &str, threshold: usize) -> Option<usize> {
+    let left = left.chars().collect::<Vec<_>>();
+    let right = right.chars().collect::<Vec<_>>();
+    StringDistanceWorkspace::new().levenshtein_with_cutoff(&left, &right, threshold)
 }
 
 /// Computes optimal string alignment Damerau-Levenshtein distance.
-///
-/// # Panics
-///
-/// Panics when the DP matrix would exceed [`MAX_DISTANCE_MATRIX_CELLS`].
-/// Use [`try_damerau_levenshtein_str`] for external or otherwise untrusted
-/// strings.
 pub fn damerau_levenshtein_str(left: &str, right: &str) -> usize {
-    try_damerau_levenshtein_str(left, right).expect("distance matrix should fit")
+    try_damerau_levenshtein_str(left, right).expect("plain string distance should fit")
 }
 
 /// Computes optimal string alignment Damerau-Levenshtein distance with
-/// explicit matrix-size validation.
+/// the fallible API shape used by lattice distances.
 pub fn try_damerau_levenshtein_str(left: &str, right: &str) -> Result<usize, DistanceError> {
     let left = left.chars().collect::<Vec<_>>();
     let right = right.chars().collect::<Vec<_>>();
-    damerau_levenshtein_chars(&left, &right)
+    Ok(StringDistanceWorkspace::new().damerau_levenshtein(&left, &right))
 }
 
-fn levenshtein_chars(left: &[char], right: &[char]) -> usize {
+/// Computes optimal string alignment Damerau-Levenshtein distance up to
+/// `threshold`.
+///
+/// Returns `Ok(Some(distance))` when the exact distance is at most
+/// `threshold`, and `Ok(None)` when the distance is greater than `threshold`.
+pub fn try_damerau_levenshtein_str_with_cutoff(
+    left: &str,
+    right: &str,
+    threshold: usize,
+) -> Result<Option<usize>, DistanceError> {
+    let left = left.chars().collect::<Vec<_>>();
+    let right = right.chars().collect::<Vec<_>>();
+    Ok(StringDistanceWorkspace::new().damerau_levenshtein_with_cutoff(&left, &right, threshold))
+}
+
+fn normalized_similarity_chars(
+    left: &[char],
+    right: &[char],
+    workspace: &mut StringDistanceWorkspace,
+) -> f64 {
+    normalized_similarity_from_distance(workspace.levenshtein(left, right), left.len(), right.len())
+}
+
+fn levenshtein_chars_impl(
+    left: &[char],
+    right: &[char],
+    workspace: &mut StringDistanceWorkspace,
+) -> usize {
     let (shorter, longer) = if left.len() <= right.len() {
         (left, right)
     } else {
         (right, left)
     };
-    let mut previous = (0..=shorter.len()).collect::<Vec<_>>();
-    let mut current = vec![0; shorter.len() + 1];
+    workspace.previous.clear();
+    workspace.previous.extend(0..=shorter.len());
+    workspace.current.clear();
+    workspace.current.resize(shorter.len() + 1, 0);
 
     for (i, &longer_ch) in longer.iter().enumerate() {
-        current[0] = i + 1;
+        workspace.current[0] = i + 1;
         for (j, &shorter_ch) in shorter.iter().enumerate() {
             let substitution_cost = usize::from(longer_ch != shorter_ch);
-            current[j + 1] = (previous[j + 1] + 1)
-                .min(current[j] + 1)
-                .min(previous[j] + substitution_cost);
+            workspace.current[j + 1] = (workspace.previous[j + 1] + 1)
+                .min(workspace.current[j] + 1)
+                .min(workspace.previous[j] + substitution_cost);
         }
-        std::mem::swap(&mut previous, &mut current);
+        std::mem::swap(&mut workspace.previous, &mut workspace.current);
     }
 
-    previous[shorter.len()]
+    workspace.previous[shorter.len()]
 }
 
-fn damerau_levenshtein_chars(left: &[char], right: &[char]) -> Result<usize, DistanceError> {
-    let rows = left.len() + 1;
-    let cols = right.len() + 1;
-    let cells = checked_distance_matrix_cells(rows, cols)?;
-    let mut dp = vec![0; cells];
-
-    for i in 0..rows {
-        dp[distance_index(i, 0, cols)] = i;
-    }
-    for j in 0..cols {
-        dp[distance_index(0, j, cols)] = j;
+fn levenshtein_chars_with_cutoff_impl(
+    left: &[char],
+    right: &[char],
+    threshold: usize,
+    workspace: &mut StringDistanceWorkspace,
+) -> Option<usize> {
+    if left.len().abs_diff(right.len()) > threshold {
+        return None;
     }
 
-    for i in 1..rows {
-        for j in 1..cols {
+    let (shorter, longer) = if left.len() <= right.len() {
+        (left, right)
+    } else {
+        (right, left)
+    };
+    workspace.previous.clear();
+    workspace.previous.extend(0..=shorter.len());
+    workspace.current.clear();
+    workspace.current.resize(shorter.len() + 1, 0);
+
+    for (i, &longer_ch) in longer.iter().enumerate() {
+        workspace.current[0] = i + 1;
+        let mut row_min = workspace.current[0];
+        for (j, &shorter_ch) in shorter.iter().enumerate() {
+            let substitution_cost = usize::from(longer_ch != shorter_ch);
+            let distance = (workspace.previous[j + 1] + 1)
+                .min(workspace.current[j] + 1)
+                .min(workspace.previous[j] + substitution_cost);
+            workspace.current[j + 1] = distance;
+            row_min = row_min.min(distance);
+        }
+        if row_min > threshold {
+            return None;
+        }
+        std::mem::swap(&mut workspace.previous, &mut workspace.current);
+    }
+
+    let distance = workspace.previous[shorter.len()];
+    (distance <= threshold).then_some(distance)
+}
+
+fn damerau_levenshtein_chars_impl(
+    left: &[char],
+    right: &[char],
+    workspace: &mut StringDistanceWorkspace,
+) -> usize {
+    if left.is_empty() {
+        return right.len();
+    }
+    if right.is_empty() {
+        return left.len();
+    }
+
+    workspace.previous2.clear();
+    workspace.previous2.resize(right.len() + 1, 0);
+    workspace.previous.clear();
+    workspace.previous.extend(0..=right.len());
+    workspace.current.clear();
+    workspace.current.resize(right.len() + 1, 0);
+
+    for i in 1..=left.len() {
+        workspace.current[0] = i;
+        for j in 1..=right.len() {
             let substitution_cost = usize::from(left[i - 1] != right[j - 1]);
-            let mut best = (dp[distance_index(i - 1, j, cols)] + 1)
-                .min(dp[distance_index(i, j - 1, cols)] + 1)
-                .min(dp[distance_index(i - 1, j - 1, cols)] + substitution_cost);
+            let mut best = (workspace.previous[j] + 1)
+                .min(workspace.current[j - 1] + 1)
+                .min(workspace.previous[j - 1] + substitution_cost);
 
             if i > 1 && j > 1 && left[i - 1] == right[j - 2] && left[i - 2] == right[j - 1] {
-                best = best.min(dp[distance_index(i - 2, j - 2, cols)] + 1);
+                best = best.min(workspace.previous2[j - 2] + 1);
             }
 
-            dp[distance_index(i, j, cols)] = best;
+            workspace.current[j] = best;
         }
+        std::mem::swap(&mut workspace.previous2, &mut workspace.previous);
+        std::mem::swap(&mut workspace.previous, &mut workspace.current);
     }
 
-    Ok(dp[distance_index(left.len(), right.len(), cols)])
+    workspace.previous[right.len()]
+}
+
+fn damerau_levenshtein_chars_with_cutoff_impl(
+    left: &[char],
+    right: &[char],
+    threshold: usize,
+    workspace: &mut StringDistanceWorkspace,
+) -> Option<usize> {
+    if left.len().abs_diff(right.len()) > threshold {
+        return None;
+    }
+
+    if left.is_empty() {
+        return (right.len() <= threshold).then_some(right.len());
+    }
+    if right.is_empty() {
+        return (left.len() <= threshold).then_some(left.len());
+    }
+
+    workspace.previous2.clear();
+    workspace.previous2.resize(right.len() + 1, 0);
+    workspace.previous.clear();
+    workspace.previous.extend(0..=right.len());
+    workspace.current.clear();
+    workspace.current.resize(right.len() + 1, 0);
+
+    for i in 1..=left.len() {
+        workspace.current[0] = i;
+        let mut row_min = workspace.current[0];
+        for j in 1..=right.len() {
+            let substitution_cost = usize::from(left[i - 1] != right[j - 1]);
+            let mut best = (workspace.previous[j] + 1)
+                .min(workspace.current[j - 1] + 1)
+                .min(workspace.previous[j - 1] + substitution_cost);
+
+            if i > 1 && j > 1 && left[i - 1] == right[j - 2] && left[i - 2] == right[j - 1] {
+                best = best.min(workspace.previous2[j - 2] + 1);
+            }
+
+            workspace.current[j] = best;
+            row_min = row_min.min(best);
+        }
+        if row_min > threshold {
+            return None;
+        }
+        std::mem::swap(&mut workspace.previous2, &mut workspace.previous);
+        std::mem::swap(&mut workspace.previous, &mut workspace.current);
+    }
+
+    let distance = workspace.previous[right.len()];
+    (distance <= threshold).then_some(distance)
+}
+
+fn trim_common_affixes<'a>(left: &'a [char], right: &'a [char]) -> (&'a [char], &'a [char]) {
+    let common_prefix_len = left
+        .iter()
+        .zip(right.iter())
+        .take_while(|(left_ch, right_ch)| left_ch == right_ch)
+        .count();
+    let mut left_end = left.len();
+    let mut right_end = right.len();
+    while left_end > common_prefix_len
+        && right_end > common_prefix_len
+        && left[left_end - 1] == right[right_end - 1]
+    {
+        left_end -= 1;
+        right_end -= 1;
+    }
+    (
+        &left[common_prefix_len..left_end],
+        &right[common_prefix_len..right_end],
+    )
 }
 
 #[cfg(test)]
@@ -1347,6 +1796,14 @@ mod tests {
             try_within_damerau_distance(&lattice, &lattice, 1),
             Err(DistanceError::MatrixTooLarge { .. })
         ));
+        assert!(matches!(
+            try_distance_with_cutoff(&lattice, &lattice, 1),
+            Err(DistanceError::MatrixTooLarge { .. })
+        ));
+        assert!(matches!(
+            try_damerau_distance_with_cutoff(&lattice, &lattice, 1),
+            Err(DistanceError::MatrixTooLarge { .. })
+        ));
     }
 
     #[test]
@@ -1469,6 +1926,8 @@ mod tests {
 
         assert!(within_distance(&left, &right, 1));
         assert!(!within_distance(&left, &right, 0));
+        assert_eq!(try_distance_with_cutoff(&left, &right, 1).unwrap(), Some(1));
+        assert_eq!(try_distance_with_cutoff(&left, &right, 0).unwrap(), None);
     }
 
     #[test]
@@ -1479,6 +1938,8 @@ mod tests {
         assert_eq!(distance(&left, &right), 1);
         assert!(within_distance(&left, &right, 1));
         assert!(!within_distance(&left, &right, 0));
+        assert_eq!(try_distance_with_cutoff(&left, &right, 1).unwrap(), Some(1));
+        assert_eq!(try_distance_with_cutoff(&left, &right, 0).unwrap(), None);
     }
 
     #[test]
@@ -1533,6 +1994,14 @@ mod tests {
 
         assert!(within_damerau_distance(&left, &right, 1));
         assert!(!within_damerau_distance(&left, &right, 0));
+        assert_eq!(
+            try_damerau_distance_with_cutoff(&left, &right, 1).unwrap(),
+            Some(1)
+        );
+        assert_eq!(
+            try_damerau_distance_with_cutoff(&left, &right, 0).unwrap(),
+            None
+        );
     }
 
     #[test]
@@ -1550,6 +2019,17 @@ mod tests {
         assert_eq!(levenshtein_str("kitten", "sitting"), 3);
         assert_eq!(levenshtein_str("いんさt", "印刷"), 4);
         assert_eq!(levenshtein_str("マトリッツォ", "マリトッツォ"), 2);
+        assert_eq!(levenshtein_str("prefix-abc-suffix", "prefix-axc-suffix"), 1);
+        assert_eq!(levenshtein_str_with_cutoff("kitten", "sitting", 3), Some(3));
+        assert_eq!(levenshtein_str_with_cutoff("kitten", "sitting", 2), None);
+        assert_eq!(
+            levenshtein_str_with_cutoff("prefix-abc-suffix", "prefix-axc-suffix", 1),
+            Some(1)
+        );
+        assert_eq!(
+            levenshtein_str_with_cutoff("蒸留所", "ジョウリュウショ", 1),
+            None
+        );
     }
 
     #[test]
@@ -1558,5 +2038,17 @@ mod tests {
         assert_eq!(try_damerau_levenshtein_str("ca", "ac").unwrap(), 1);
         assert_eq!(damerau_levenshtein_str("マトリッツォ", "マリトッツォ"), 1);
         assert_eq!(damerau_levenshtein_str("いんさt", "印刷"), 4);
+        assert_eq!(
+            try_damerau_levenshtein_str_with_cutoff("abc", "acb", 1).unwrap(),
+            Some(1)
+        );
+        assert_eq!(
+            try_damerau_levenshtein_str_with_cutoff("abc", "acb", 0).unwrap(),
+            None
+        );
+        assert_eq!(
+            try_damerau_levenshtein_str_with_cutoff("蒸留所", "ジョウリュウショ", 1).unwrap(),
+            None
+        );
     }
 }

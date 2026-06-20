@@ -33,6 +33,42 @@ especially when surface forms differ but reading paths stay close.
 [Use the CLI](cli.md){ .md-button }
 [Read the Python API reference](api.md){ .md-button }
 
+## Benchmark
+
+Recorded on 2026-06-20. The first table reports scoring time only; dictionary
+loading is shown separately below.
+
+!!! important
+
+    RapidFuzz measures surface Levenshtein distance, so it is expected to be
+    much faster. Treat this as a reference for mòine's dictionary-backed
+    reading edit distance, not a same-task speed comparison.
+
+```bash
+uv run python -m moine download ja
+uv run --python python3.14 --with rapidfuzz \
+  python scripts/benchmark_distances.py \
+  --loops 10000
+```
+
+This is a quick local benchmark command. The release-wheel command used for
+the recorded table lives in the
+[development notes](https://github.com/tagucci/moine/blob/main/docs/development.md).
+
+| Method | mean (±std) | relative |
+|---|---:|---:|
+| RapidFuzz Levenshtein | 0.15 ± 0.01 us/call | 1.00x |
+| mòine ja distance | 58.38 ± 109.10 us/call | 390x |
+
+Fresh dictionary loads from the standard installed artifacts, measured over 100
+loads:
+
+| Dictionary | mean (±std) |
+|---|---:|
+| UniDic-CWJ | 475.23 ms ± 22.41 ms |
+| SudachiDict-full | 1959.09 ms ± 43.83 ms |
+| CC-CEDICT | 168.82 ms ± 12.47 ms |
+
 ## Name
 
 The project name is inspired by Bunnahabhain Mòine, a Scotch whisky.
