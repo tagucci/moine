@@ -317,7 +317,9 @@ pub mod ja {
             max_paths: metadata.query_defaults.max_paths,
             longest_match_only: metadata.query_defaults.longest_match_only,
             max_readings_per_segment: metadata.query_defaults.max_readings_per_segment,
-        };
+        }
+        .validate()
+        .map_err(BundleLoadError::Payload)?;
 
         Ok(LoadedBundle {
             metadata_path,
@@ -713,7 +715,9 @@ pub mod zh {
             max_paths: metadata.query_defaults.max_paths,
             longest_match_only: metadata.query_defaults.longest_match_only,
             max_readings_per_segment: metadata.query_defaults.max_readings_per_segment,
-        };
+        }
+        .validate()
+        .map_err(BundleLoadError::Payload)?;
 
         Ok(LoadedBundle {
             metadata_path,

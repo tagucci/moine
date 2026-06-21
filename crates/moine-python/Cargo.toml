@@ -1,6 +1,6 @@
 [package]
 name = "moine-python"
-version = "0.2.0"
+version = "0.2.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -19,9 +19,9 @@ path = "src/lib.rs"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-moine-core = { version = "0.2.0", path = "../moine-core" }
-moine-ja = { version = "0.2.0", path = "../moine-ja" }
-moine-zh = { version = "0.2.0", path = "../moine-zh" }
+moine-core = { version = "0.2.1", path = "../moine-core" }
+moine-ja = { version = "0.2.1", path = "../moine-ja" }
+moine-zh = { version = "0.2.1", path = "../moine-zh" }
 pyo3 = "0.28.3"
 serde_yaml = "0.9"
 

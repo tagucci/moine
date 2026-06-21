@@ -291,15 +291,10 @@ fn load_japanese_dictionary(
         return Err(JsValue::from_str("Japanese payload entry count mismatch"));
     }
 
-    Ok(JapaneseDictionary {
-        index,
-        options: DictionaryReadingOptions {
-            max_span_chars: metadata.query_defaults.max_span_chars,
-            max_paths: metadata.query_defaults.max_paths,
-            longest_match_only: metadata.query_defaults.longest_match_only,
-            max_readings_per_segment: metadata.query_defaults.max_readings_per_segment,
-        },
-    })
+    let options =
+        japanese_options_from_metadata(&metadata).map_err(|err| JsValue::from_str(&err))?;
+
+    Ok(JapaneseDictionary { index, options })
 }
 
 fn load_chinese_dictionary(
@@ -346,15 +341,36 @@ fn load_chinese_dictionary(
         return Err(JsValue::from_str("Chinese payload pinyin view mismatch"));
     }
 
-    Ok(ChineseDictionary {
-        index,
-        options: PinyinReadingOptions {
-            max_span_chars: metadata.query_defaults.max_span_chars,
-            max_paths: metadata.query_defaults.max_paths,
-            longest_match_only: metadata.query_defaults.longest_match_only,
-            max_readings_per_segment: metadata.query_defaults.max_readings_per_segment,
-        },
-    })
+    let options =
+        chinese_options_from_metadata(&metadata).map_err(|err| JsValue::from_str(&err))?;
+
+    Ok(ChineseDictionary { index, options })
+}
+
+fn japanese_options_from_metadata(
+    metadata: &UnidicArtifactMetadata,
+) -> Result<DictionaryReadingOptions, String> {
+    DictionaryReadingOptions {
+        max_span_chars: metadata.query_defaults.max_span_chars,
+        max_paths: metadata.query_defaults.max_paths,
+        longest_match_only: metadata.query_defaults.longest_match_only,
+        max_readings_per_segment: metadata.query_defaults.max_readings_per_segment,
+    }
+    .validate()
+    .map_err(|err| format!("invalid Japanese query defaults: {err}"))
+}
+
+fn chinese_options_from_metadata(
+    metadata: &ZhArtifactMetadata,
+) -> Result<PinyinReadingOptions, String> {
+    PinyinReadingOptions {
+        max_span_chars: metadata.query_defaults.max_span_chars,
+        max_paths: metadata.query_defaults.max_paths,
+        longest_match_only: metadata.query_defaults.longest_match_only,
+        max_readings_per_segment: metadata.query_defaults.max_readings_per_segment,
+    }
+    .validate()
+    .map_err(|err| format!("invalid Chinese query defaults: {err}"))
 }
 
 fn verify_payload_size(payload: &[u8], label: &str) -> Result<(), JsValue> {
@@ -591,6 +607,16 @@ entries:
     }
 
     #[test]
+    fn rejects_japanese_metadata_with_over_budget_query_defaults() {
+        let metadata = JA_METADATA.replace("max_paths: 128", "max_paths: 1000000");
+        let metadata = serde_yaml::from_str::<UnidicArtifactMetadata>(&metadata).unwrap();
+        let message = japanese_options_from_metadata(&metadata).unwrap_err();
+
+        assert!(message.contains("invalid Japanese query defaults"));
+        assert!(message.contains("max_paths"));
+    }
+
+    #[test]
     fn renders_japanese_lattice_dot_with_loaded_dictionary() {
         let mut demo = MoineDemo::new();
         let metadata = JA_METADATA.replace(
@@ -675,6 +701,16 @@ entries:
             .compare("zh", "weishiji，威士忌。", "威士忌，weishiji。")
             .unwrap();
         assert_eq!(punctuated_result.lattice_path_edit_distance(), 0);
+    }
+
+    #[test]
+    fn rejects_chinese_metadata_with_over_budget_query_defaults() {
+        let metadata = ZH_METADATA.replace("max_paths: 128", "max_paths: 1000000");
+        let metadata = serde_yaml::from_str::<ZhArtifactMetadata>(&metadata).unwrap();
+        let message = chinese_options_from_metadata(&metadata).unwrap_err();
+
+        assert!(message.contains("invalid Chinese query defaults"));
+        assert!(message.contains("max_paths"));
     }
 
     #[test]

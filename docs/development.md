@@ -30,6 +30,9 @@ Run Python tests and package checks:
 WHEEL_DIR=$(mktemp -d)
 uv run --no-project --with 'maturin>=1.9,<2' maturin build --out "$WHEEL_DIR"
 WHEEL=$(ls "$WHEEL_DIR"/moine-*.whl)
+uv run --no-project --with "$WHEEL" \
+  python -I -c 'import moine; print(moine.__version__); print(moine.__file__)'
+uv run --no-project --with pip --with "$WHEEL" python -m pip check
 uv run --no-project --with 'pytest>=8,<9' --with "$WHEEL" python -m pytest python/tests
 uv run --no-project --with 'ruff>=0.14,<0.15' ruff check python
 uv run --no-project --with 'ruff>=0.14,<0.15' ruff format --check python
@@ -37,9 +40,10 @@ uv run --no-project --with 'ty>=0.0.38,<0.1' ty check
 ```
 
 Use the `--no-project` form for local checks so `uv` installs only the tool
-being run. For pytest, build a fresh local wheel first and install that wheel
-into the temporary pytest environment so cached `moine` wheels with the same
-version cannot shadow the checkout.
+being run. Build a fresh local wheel first, smoke-test that exact wheel with
+isolated import and `pip check`, then install it into the temporary pytest
+environment so cached `moine` wheels with the same version cannot shadow the
+checkout.
 
 Build the GitHub Pages documentation site and browser demo:
 
@@ -54,7 +58,8 @@ Build and smoke-test a local wheel:
 uv run --with maturin maturin build --out /private/tmp/moine-wheel
 WHEEL=$(ls /private/tmp/moine-wheel/moine-*.whl)
 uv run --with "$WHEEL" \
-  python -c 'import moine; print(moine.distance("abc", "adc"))'
+  python -I -c 'import moine; print(moine.__version__); print(moine.__file__); print(moine.distance("abc", "adc"))'
+uv run --with pip --with "$WHEEL" python -m pip check
 ```
 
 Run the compact Python speed benchmark and print a Markdown table:
@@ -181,8 +186,8 @@ Render the same kind of comparison as a romaji lattice graph:
 
 ```bash
 cargo run -q -p moine-cli -- compare \
-  --left "ジュジュツカイセン" \
-  --right "呪術廻戦" \
+  --left "呪術廻戦" \
+  --right "ジュジュツカイセン" \
   --sudachi-lex-csv /tmp/sudachi-raw-20260428/full_lex.csv \
   --max-readings-per-surface 16 \
   --max-readings-per-segment 16 \

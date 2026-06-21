@@ -183,6 +183,12 @@ jobs:
         run: ls -lh dist
       - name: Check distributions
         run: uvx --from 'twine>=6,<7' twine check dist/*
+      - name: Smoke Linux wheel install
+        run: |
+          WHEEL="$(ls dist/moine-*-cp312-*-manylinux*.whl | head -n 1)"
+          test -n "$WHEEL"
+          uv run --python 3.12 --isolated --no-project --with "$WHEEL" python -I -c "import moine; print(moine.__version__); print(moine.__file__)"
+          uv run --python 3.12 --isolated --no-project --with pip --with "$WHEEL" python -m pip check
 
   publish-pypi:
     name: Publish to PyPI

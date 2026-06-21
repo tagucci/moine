@@ -49,6 +49,7 @@ pub fn compare_with_unidic_index(
     index: &UnidicReadingIndex,
     options: DictionaryReadingOptions,
 ) -> Result<JapaneseDistance, JaLatticeError> {
+    let options = validate_dictionary_options(options)?;
     let left_lattice = unidic_or_direct_lattice(left, index, options)?;
     let right_lattice = unidic_or_direct_lattice(right, index, options)?;
     compare_lattices(left, right, &left_lattice, &right_lattice)
@@ -61,6 +62,7 @@ pub fn normalized_similarity_with_unidic_index(
     index: &UnidicReadingIndex,
     options: DictionaryReadingOptions,
 ) -> Result<f64, JaLatticeError> {
+    let options = validate_dictionary_options(options)?;
     let left_paths = unidic_or_direct_romaji_paths(left, index, options)?;
     let right_paths = unidic_or_direct_romaji_paths(right, index, options)?;
     Ok(max_normalized_similarity(&left_paths, &right_paths))
@@ -72,6 +74,7 @@ pub fn unidic_or_direct_lattice(
     index: &UnidicReadingIndex,
     options: DictionaryReadingOptions,
 ) -> Result<Lattice, JaLatticeError> {
+    let options = validate_dictionary_options(options)?;
     let contains_ascii = contains_ascii_alphanumeric(input);
     if !contains_ascii {
         if let Ok(lattice) = romaji_lattice(input) {
@@ -92,6 +95,7 @@ pub fn unidic_or_direct_romaji_paths(
     index: &UnidicReadingIndex,
     options: DictionaryReadingOptions,
 ) -> Result<Vec<String>, JaLatticeError> {
+    let options = validate_dictionary_options(options)?;
     let mut paths = BTreeSet::new();
     if let Ok(direct_paths) = romaji_paths(input) {
         if !contains_ascii_alphanumeric(input) {
@@ -133,6 +137,14 @@ pub fn unidic_or_direct_romaji_paths(
     }
 
     romaji_paths(input)
+}
+
+fn validate_dictionary_options(
+    options: DictionaryReadingOptions,
+) -> Result<DictionaryReadingOptions, JaLatticeError> {
+    options
+        .validate()
+        .map_err(|err| JaLatticeError::ArtifactPayload(err.to_string()))
 }
 
 fn contains_ascii_alphanumeric(input: &str) -> bool {

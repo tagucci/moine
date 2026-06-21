@@ -5,13 +5,36 @@ use std::path::{Path, PathBuf};
 use clap::error::ErrorKind;
 use flate2::{write::GzEncoder, Compression};
 use moine_core::{distance_with_trace, Lattice};
-use moine_ja::UnidicReadingField;
-use moine_zh::PinyinView;
+use moine_ja::{
+    DictionaryReadingOptions, SudachiIndexOptions, UnidicIndexOptions, UnidicReadingField,
+};
+use moine_zh::{CedictIndexOptions, PinyinReadingOptions, PinyinView};
 
 use crate::archive::*;
 use crate::args::*;
 use crate::commands::compare::*;
-use crate::commands::unidic_artifact::run_unidic_artifact_runtime_measure;
+use crate::commands::download::{
+    copy_uri_to_path, read_uri_text, MAX_CHECKSUM_MANIFEST_BYTES, MAX_DOWNLOAD_BYTES,
+};
+use crate::commands::unidic_artifact::{
+    run_sudachi_artifact_bundle, run_unidic_artifact_bundle, run_unidic_artifact_metadata,
+    run_unidic_artifact_runtime_measure,
+};
+use crate::commands::zh_artifact::{run_zh_artifact_bundle, run_zh_artifact_metadata};
+
+fn over_budget_dictionary_options() -> DictionaryReadingOptions {
+    DictionaryReadingOptions {
+        max_paths: usize::MAX,
+        ..DictionaryReadingOptions::default()
+    }
+}
+
+fn over_budget_pinyin_options() -> PinyinReadingOptions {
+    PinyinReadingOptions {
+        max_paths: usize::MAX,
+        ..PinyinReadingOptions::default()
+    }
+}
 
 #[test]
 fn parses_mecab_lform_as_reading() {
@@ -159,6 +182,46 @@ fn default_download_specs_point_to_current_artifact_releases() {
 }
 
 #[test]
+fn local_download_copy_enforces_size_limit() {
+    let temp = TempDir::new("moine-download-test").unwrap();
+    let source = temp.path().join("oversized.tar.gz");
+    fs::File::create(&source)
+        .unwrap()
+        .set_len(MAX_DOWNLOAD_BYTES + 1)
+        .unwrap();
+
+    let err = copy_uri_to_path(source.to_str().unwrap(), &temp.path().join("plain.tar.gz"))
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("download exceeded maximum size"));
+
+    let file_uri = format!("file://{}", source.display());
+    let err = copy_uri_to_path(&file_uri, &temp.path().join("uri.tar.gz"))
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("download exceeded maximum size"));
+}
+
+#[test]
+fn local_checksum_manifest_enforces_size_limit() {
+    let temp = TempDir::new("moine-download-test").unwrap();
+    let source = temp.path().join("SHA256SUMS");
+    fs::File::create(&source)
+        .unwrap()
+        .set_len(MAX_CHECKSUM_MANIFEST_BYTES + 1)
+        .unwrap();
+
+    let err = read_uri_text(source.to_str().unwrap())
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("checksum manifest exceeded maximum size"));
+
+    let file_uri = format!("file://{}", source.display());
+    let err = read_uri_text(&file_uri).unwrap_err().to_string();
+    assert!(err.contains("checksum manifest exceeded maximum size"));
+}
+
+#[test]
 fn parses_cache_lookup_options() {
     let list = CacheCliOptions::parse(vec![
         "--cache-dir".to_string(),
@@ -227,6 +290,30 @@ fn extract_artifact_archive_rejects_links() {
     let err = extract_artifact_archive(&archive_path, &temp.path().join("extract"))
         .expect_err("symlink entries should be rejected");
     assert!(err.to_string().contains("unsupported archive entry type"));
+}
+
+#[test]
+fn extract_artifact_archive_rejects_too_many_entries() {
+    let temp = TempDir::new("moine-cli-test").unwrap();
+    let archive_path = temp.path().join("too-many.tar");
+    {
+        let file = fs::File::create(&archive_path).unwrap();
+        let mut builder = tar::Builder::new(file);
+        for index in 0..=MAX_ARCHIVE_ENTRIES {
+            let mut header = tar::Header::new_gnu();
+            header.set_entry_type(tar::EntryType::Directory);
+            header.set_size(0);
+            header.set_cksum();
+            builder
+                .append_data(&mut header, format!("bundle/dir-{index}"), std::io::empty())
+                .unwrap();
+        }
+        builder.finish().unwrap();
+    }
+
+    let err = extract_artifact_archive(&archive_path, &temp.path().join("extract"))
+        .expect_err("excessive archive entry counts should be rejected");
+    assert!(err.to_string().contains("archive entry count"));
 }
 
 #[test]
@@ -370,6 +457,39 @@ fn parses_zh_artifact_metadata_options() {
     assert_eq!(options.payload_file_name, "moine-cedict.readings.moineidx");
     assert_eq!(options.payload_format, ArtifactPayloadFormat::Indexed);
     assert_eq!(options.source_name, "CC-CEDICT");
+}
+
+#[test]
+fn zh_artifact_generators_reject_over_budget_query_defaults() {
+    let metadata_err = run_zh_artifact_metadata(ZhArtifactMetadataCliOptions {
+        cedict: "/does/not/exist/cedict.txt".to_string(),
+        output: None,
+        artifact_name: "moine-cedict-test".to_string(),
+        payload_file_name: "readings.yaml".to_string(),
+        payload_format: ArtifactPayloadFormat::Yaml,
+        source_name: "CC-CEDICT".to_string(),
+        source_version: "test".to_string(),
+        index_options: CedictIndexOptions::default(),
+        reading_options: over_budget_pinyin_options(),
+    })
+    .unwrap_err();
+
+    assert!(metadata_err.to_string().contains("max_paths"));
+
+    let bundle_err = run_zh_artifact_bundle(ZhArtifactBundleCliOptions {
+        cedict: "/does/not/exist/cedict.txt".to_string(),
+        output_dir: "/does/not/matter".to_string(),
+        artifact_name: "moine-cedict-test".to_string(),
+        payload_format: ArtifactPayloadFormat::Indexed,
+        source_name: "CC-CEDICT".to_string(),
+        source_version: "test".to_string(),
+        license_file: None,
+        index_options: CedictIndexOptions::default(),
+        reading_options: over_budget_pinyin_options(),
+    })
+    .unwrap_err();
+
+    assert!(bundle_err.to_string().contains("max_paths"));
 }
 
 #[test]
@@ -875,6 +995,58 @@ fn parses_unidic_artifact_bundle_options() {
     assert_eq!(options.index_options.max_readings_per_surface, Some(16));
     assert_eq!(options.dictionary_options.max_readings_per_segment, Some(8));
     assert!(options.dictionary_options.longest_match_only);
+}
+
+#[test]
+fn unidic_artifact_generators_reject_over_budget_query_defaults() {
+    let metadata_err = run_unidic_artifact_metadata(UnidicArtifactMetadataCliOptions {
+        lex_csv: "/does/not/exist/lex.csv".to_string(),
+        output: None,
+        artifact_name: "moine-unidic-test".to_string(),
+        payload_file_name: "readings.yaml".to_string(),
+        payload_format: ArtifactPayloadFormat::Yaml,
+        source_name: "UniDic-CWJ".to_string(),
+        source_version: "test".to_string(),
+        index_options: UnidicIndexOptions::default(),
+        dictionary_options: over_budget_dictionary_options(),
+    })
+    .unwrap_err();
+
+    assert!(metadata_err.to_string().contains("max_paths"));
+
+    let bundle_err = run_unidic_artifact_bundle(UnidicArtifactBundleCliOptions {
+        lex_csv: "/does/not/exist/lex.csv".to_string(),
+        output_dir: "/does/not/matter".to_string(),
+        artifact_name: "moine-unidic-test".to_string(),
+        payload_format: ArtifactPayloadFormat::Indexed,
+        source_name: "UniDic-CWJ".to_string(),
+        source_version: "test".to_string(),
+        license_dir: None,
+        index_options: UnidicIndexOptions::default(),
+        dictionary_options: over_budget_dictionary_options(),
+    })
+    .unwrap_err();
+
+    assert!(bundle_err.to_string().contains("max_paths"));
+}
+
+#[test]
+fn sudachi_artifact_bundle_rejects_over_budget_query_defaults() {
+    let err = run_sudachi_artifact_bundle(SudachiArtifactBundleCliOptions {
+        lex_csv: "/does/not/exist/sudachi.csv".to_string(),
+        output_dir: "/does/not/matter".to_string(),
+        artifact_name: "moine-sudachi-test".to_string(),
+        payload_format: ArtifactPayloadFormat::Indexed,
+        source_name: "SudachiDict".to_string(),
+        source_version: "test".to_string(),
+        license_file: "/does/not/exist/LICENSE-2.0.txt".to_string(),
+        legal_file: "/does/not/exist/LEGAL".to_string(),
+        index_options: SudachiIndexOptions::default(),
+        dictionary_options: over_budget_dictionary_options(),
+    })
+    .unwrap_err();
+
+    assert!(err.to_string().contains("max_paths"));
 }
 
 #[test]

@@ -16,13 +16,13 @@
 <title>cluster_right</title>
 <path fill="none" stroke="#ced4da" d="M20,-8C20,-8 1290.02,-8 1290.02,-8 1296.02,-8 1302.02,-14 1302.02,-20 1302.02,-20 1302.02,-188 1302.02,-188 1302.02,-194 1296.02,-200 1290.02,-200 1290.02,-200 20,-200 20,-200 14,-200 8,-194 8,-188 8,-188 8,-20 8,-20 8,-14 14,-8 20,-8"/>
 <text xml:space="preserve" text-anchor="middle" x="655.01" y="-182.7" font-family="Helvetica,sans-Serif" font-size="14.00">RIGHT</text>
-<text xml:space="preserve" text-anchor="middle" x="655.01" y="-167.7" font-family="Helvetica,sans-Serif" font-size="14.00">input=呪術廻戦</text>
+<text xml:space="preserve" text-anchor="middle" x="655.01" y="-167.7" font-family="Helvetica,sans-Serif" font-size="14.00">input=ジュジュツカイセン</text>
 </g>
 <g id="clust2" class="cluster">
 <title>cluster_left</title>
 <path fill="none" stroke="#ced4da" d="M20,-208C20,-208 1290.02,-208 1290.02,-208 1296.02,-208 1302.02,-214 1302.02,-220 1302.02,-220 1302.02,-388 1302.02,-388 1302.02,-394 1296.02,-400 1290.02,-400 1290.02,-400 20,-400 20,-400 14,-400 8,-394 8,-388 8,-388 8,-220 8,-220 8,-214 14,-208 20,-208"/>
 <text xml:space="preserve" text-anchor="middle" x="655.01" y="-382.7" font-family="Helvetica,sans-Serif" font-size="14.00">LEFT</text>
-<text xml:space="preserve" text-anchor="middle" x="655.01" y="-367.7" font-family="Helvetica,sans-Serif" font-size="14.00">input=ジュジュツカイセン</text>
+<text xml:space="preserve" text-anchor="middle" x="655.01" y="-367.7" font-family="Helvetica,sans-Serif" font-size="14.00">input=呪術廻戦</text>
 </g>
 <!-- right_0 -->
 <g id="node1" class="node">

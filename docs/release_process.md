@@ -34,6 +34,9 @@ cargo rustdoc -p moine-core --lib -- -W missing_docs
 WHEEL_DIR=$(mktemp -d)
 uv run --no-project --with 'maturin>=1.9,<2' maturin build --out "$WHEEL_DIR"
 WHEEL=$(ls "$WHEEL_DIR"/moine-*.whl)
+uv run --no-project --with "$WHEEL" \
+  python -I -c 'import moine; print(moine.__version__); print(moine.__file__)'
+uv run --no-project --with pip --with "$WHEEL" python -m pip check
 uv run --no-project --with 'pytest>=8,<9' --with "$WHEEL" python -m pytest python/tests
 uv run --no-project --with 'ruff>=0.14,<0.15' ruff check python
 uv run --no-project --with 'ruff>=0.14,<0.15' ruff format --check python
@@ -41,8 +44,9 @@ uv run --no-project --with 'ty>=0.0.38,<0.1' ty check
 ```
 
 The Python checks intentionally use `--no-project`. That keeps `uv` from
-installing `moine` itself into the temporary tool environment. The pytest step
-first builds a fresh local wheel and installs that wheel explicitly so cached
+installing `moine` itself into the temporary tool environment. Build a fresh
+local wheel first, smoke-test that exact wheel with isolated import and
+`pip check`, then install it into the temporary pytest environment so cached
 `moine` wheels with the same version cannot shadow the checkout.
 
 Run the local artifact smoke script:
@@ -129,9 +133,9 @@ these exact names:
 - `moine-cedict-20260520-v0.1.1/SHA256SUMS`
 
 These dictionary release tags are artifact-specific and do not need to match
-the package version when the generated payloads are unchanged. For the package
-`v0.2.0` release, the current public downloader targets are UniDic-CWJ
-`v0.1.1`, SudachiDict-full `v0.2.0`, and CC-CEDICT `v0.1.1`.
+the package version when the generated payloads are unchanged. For the `v0.2.1`
+package release, the current public downloader targets are UniDic-CWJ `v0.1.1`,
+SudachiDict-full `v0.2.0`, and CC-CEDICT `v0.1.1`.
 
 The release workflow checks these assets before publishing the Python
 distribution on tag pushes. Keep the workflow asset list, Rust downloader specs,

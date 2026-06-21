@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 
 use moine_zh::{
     artifact_file_digest_path as zh_artifact_file_digest_path, CedictIndexOptions,
-    ZhArtifactLicense, ZhArtifactMetadata, ZhArtifactMetadataOptions, ZhReadingIndex,
-    ARTIFACT_PAYLOAD_CHECKSUM_ALGORITHM as ZH_ARTIFACT_PAYLOAD_CHECKSUM_ALGORITHM,
+    PinyinReadingOptions, ZhArtifactLicense, ZhArtifactMetadata, ZhArtifactMetadataOptions,
+    ZhReadingIndex, ARTIFACT_PAYLOAD_CHECKSUM_ALGORITHM as ZH_ARTIFACT_PAYLOAD_CHECKSUM_ALGORITHM,
     ARTIFACT_PAYLOAD_FILE_DIGEST_ALGORITHM as ZH_ARTIFACT_PAYLOAD_FILE_DIGEST_ALGORITHM,
 };
 
@@ -24,6 +24,7 @@ use crate::args::{
 pub(crate) fn run_zh_artifact_metadata(
     options: ZhArtifactMetadataCliOptions,
 ) -> Result<(), Box<dyn Error>> {
+    let reading_options = validate_zh_dictionary_options(options.reading_options)?;
     let index =
         ZhReadingIndex::from_cedict_path_with_options(&options.cedict, options.index_options)?;
     let metadata = index.artifact_metadata(ZhArtifactMetadataOptions {
@@ -35,7 +36,7 @@ pub(crate) fn run_zh_artifact_metadata(
         source_version: options.source_version,
         source_cedict: options.cedict.clone(),
         index_options: options.index_options,
-        query_defaults: options.reading_options,
+        query_defaults: reading_options,
         license: ZhArtifactLicense::default(),
     });
     let yaml = serde_yaml::to_string(&metadata)?;
@@ -112,6 +113,7 @@ pub(crate) fn run_zh_artifact_inspect(
 pub(crate) fn run_zh_artifact_bundle(
     options: ZhArtifactBundleCliOptions,
 ) -> Result<(), Box<dyn Error>> {
+    let reading_options = validate_zh_dictionary_options(options.reading_options)?;
     let index =
         ZhReadingIndex::from_cedict_path_with_options(&options.cedict, options.index_options)?;
     let output_dir = PathBuf::from(&options.output_dir);
@@ -134,7 +136,7 @@ pub(crate) fn run_zh_artifact_bundle(
         source_version: options.source_version,
         source_cedict: options.cedict.clone(),
         index_options: options.index_options,
-        query_defaults: options.reading_options,
+        query_defaults: reading_options,
         license: ZhArtifactLicense::default(),
     });
     metadata.payload.file_digest_algorithm =
@@ -261,6 +263,7 @@ pub(crate) fn verify_zh_artifact_bundle(
     let metadata_path = PathBuf::from(metadata);
     let metadata_yaml = fs::read_to_string(&metadata_path)?;
     let metadata = serde_yaml::from_str::<ZhArtifactMetadata>(&metadata_yaml)?;
+    validate_zh_dictionary_options(zh_dictionary_options_from_metadata(&metadata))?;
     if metadata.schema_version != 1 {
         return Err(Box::new(CliError::ArtifactVerificationFailed(format!(
             "unsupported zh metadata schema version {}",
@@ -329,6 +332,23 @@ pub(crate) fn verify_zh_artifact_bundle(
         index,
         file_digest,
         checksum,
+    })
+}
+
+fn zh_dictionary_options_from_metadata(metadata: &ZhArtifactMetadata) -> PinyinReadingOptions {
+    PinyinReadingOptions {
+        max_span_chars: metadata.query_defaults.max_span_chars,
+        max_paths: metadata.query_defaults.max_paths,
+        longest_match_only: metadata.query_defaults.longest_match_only,
+        max_readings_per_segment: metadata.query_defaults.max_readings_per_segment,
+    }
+}
+
+fn validate_zh_dictionary_options(
+    options: PinyinReadingOptions,
+) -> Result<PinyinReadingOptions, Box<dyn Error>> {
+    options.validate().map_err(|err| {
+        Box::new(CliError::ArtifactVerificationFailed(err.to_string())) as Box<dyn Error>
     })
 }
 

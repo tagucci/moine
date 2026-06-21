@@ -75,6 +75,13 @@ const MAX_ARTIFACT_PAYLOAD_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_ARTIFACT_ENTRIES: usize = 2_000_000;
 const MAX_ARTIFACT_READINGS_PER_ENTRY: usize = 256;
 const MAX_ARTIFACT_STRING_BYTES: usize = 16 * 1024;
+const DEFAULT_QUERY_SPAN_CHARS: usize = 8;
+const DEFAULT_QUERY_PATHS: usize = 1024;
+// Query expansion is clone-heavy; keep hard caps as bounded multiples of the
+// defaults so malformed metadata cannot silently request unbounded work.
+const MAX_QUERY_SPAN_CHARS: usize = DEFAULT_QUERY_SPAN_CHARS * 32;
+const MAX_QUERY_PATHS: usize = DEFAULT_QUERY_PATHS * 16;
+const MAX_QUERY_READINGS_PER_SEGMENT: usize = MAX_ARTIFACT_READINGS_PER_ENTRY;
 /// Current canonical checksum algorithm for normalized Chinese payload content.
 pub const ARTIFACT_PAYLOAD_CHECKSUM_ALGORITHM: &str = "sha256-canonical-v1";
 /// File digest algorithm used to verify payload bytes before loading.
@@ -583,11 +590,28 @@ impl Default for CedictIndexOptions {
 impl Default for PinyinReadingOptions {
     fn default() -> Self {
         Self {
-            max_span_chars: 8,
-            max_paths: 1024,
+            max_span_chars: DEFAULT_QUERY_SPAN_CHARS,
+            max_paths: DEFAULT_QUERY_PATHS,
             longest_match_only: false,
             max_readings_per_segment: None,
         }
+    }
+}
+
+impl PinyinReadingOptions {
+    /// Validates expansion options before they are used at public or metadata
+    /// trust boundaries.
+    pub fn validate(self) -> Result<Self, ZhArtifactPayloadError> {
+        check_limit("max_span_chars", self.max_span_chars, MAX_QUERY_SPAN_CHARS)?;
+        check_limit("max_paths", self.max_paths, MAX_QUERY_PATHS)?;
+        if let Some(max_readings) = self.max_readings_per_segment {
+            check_limit(
+                "max_readings_per_segment",
+                max_readings,
+                MAX_QUERY_READINGS_PER_SEGMENT,
+            )?;
+        }
+        Ok(self)
     }
 }
 
@@ -1242,8 +1266,8 @@ impl CedictReadingIndex {
     /// Expands `text` into joined pinyin reading strings.
     ///
     /// This is a compatibility helper over [`Self::reading_paths`]. It drops
-    /// segment boundaries and treats indexed artifact decode errors as an empty
-    /// expansion.
+    /// segment boundaries and treats indexed artifact decode errors or invalid
+    /// expansion options as an empty expansion.
     pub fn reading_sequences(&self, text: &str, options: PinyinReadingOptions) -> Vec<String> {
         self.reading_paths(text, options)
             .into_iter()
@@ -1255,7 +1279,8 @@ impl CedictReadingIndex {
     ///
     /// Every returned path contains surface/reading segment boundaries plus the
     /// joined pinyin reading. Use [`Self::try_reading_paths_with_stats`] when
-    /// indexed artifact corruption must be reported.
+    /// indexed artifact corruption or invalid expansion options must be
+    /// reported.
     pub fn reading_paths(
         &self,
         text: &str,
@@ -1264,8 +1289,9 @@ impl CedictReadingIndex {
         self.reading_paths_with_stats(text, options).paths
     }
 
-    /// Expands dictionary pinyin paths and treats artifact decode errors as an
-    /// empty expansion for backward compatibility.
+    /// Expands dictionary pinyin paths and treats artifact decode errors or
+    /// invalid expansion options as an empty expansion for backward
+    /// compatibility.
     ///
     /// Use [`Self::try_reading_paths_with_stats`] when loading indexed
     /// artifacts from outside the process trust boundary.
@@ -1279,7 +1305,7 @@ impl CedictReadingIndex {
     }
 
     /// Expands dictionary pinyin paths and preserves indexed artifact decode
-    /// errors.
+    /// and option validation errors.
     pub fn try_reading_paths_with_stats(
         &self,
         text: &str,
@@ -1302,7 +1328,8 @@ impl CedictReadingIndex {
     }
 
     /// Expands hybrid dictionary/direct pinyin paths and treats artifact decode
-    /// errors as an empty expansion for backward compatibility.
+    /// errors or invalid expansion options as an empty expansion for backward
+    /// compatibility.
     ///
     /// Use [`Self::try_hybrid_reading_paths_with_stats`] when loading indexed
     /// artifacts from outside the process trust boundary.
@@ -1316,7 +1343,7 @@ impl CedictReadingIndex {
     }
 
     /// Expands hybrid dictionary/direct pinyin paths and preserves indexed
-    /// artifact decode errors.
+    /// artifact decode and option validation errors.
     pub fn try_hybrid_reading_paths_with_stats(
         &self,
         text: &str,
@@ -1371,6 +1398,7 @@ impl CedictReadingIndex {
         options: PinyinReadingOptions,
         allow_direct_fallback: bool,
     ) -> Result<PinyinReadingExpansion, ZhArtifactPayloadError> {
+        let options = options.validate()?;
         if text.is_empty() || options.max_span_chars == 0 || options.max_paths == 0 {
             return Ok(PinyinReadingExpansion::default());
         }
@@ -1386,7 +1414,7 @@ impl CedictReadingIndex {
 
         for start in (0..char_len).rev() {
             let mut paths_by_reading = BTreeMap::new();
-            let end_limit = char_len.min(start + options.max_span_chars);
+            let end_limit = char_len.min(start.saturating_add(options.max_span_chars));
             let mut matching_ends = Vec::new();
 
             for end in start + 1..=end_limit {
@@ -1533,6 +1561,7 @@ pub fn compare_with_zh_index(
     index: &ZhReadingIndex,
     options: PinyinReadingOptions,
 ) -> Result<ChineseDistance, CnLatticeError> {
+    let options = validate_pinyin_options(options)?;
     let left_lattice = cedict_or_direct_lattice(left, index, options)?;
     let right_lattice = cedict_or_direct_lattice(right, index, options)?;
     compare_lattices(left, right, &left_lattice, &right_lattice)
@@ -1545,6 +1574,7 @@ pub fn normalized_similarity_with_zh_index(
     index: &ZhReadingIndex,
     options: PinyinReadingOptions,
 ) -> Result<f64, CnLatticeError> {
+    let options = validate_pinyin_options(options)?;
     let left_paths = zh_or_direct_pinyin_paths(left, index, options)?;
     let right_paths = zh_or_direct_pinyin_paths(right, index, options)?;
     Ok(max_normalized_similarity(&left_paths, &right_paths))
@@ -1565,6 +1595,7 @@ pub fn zh_or_direct_lattice(
     index: &ZhReadingIndex,
     options: PinyinReadingOptions,
 ) -> Result<Lattice, CnLatticeError> {
+    let options = validate_pinyin_options(options)?;
     if let Some(lattice) = direct_pinyin_lattice(input) {
         return Ok(lattice);
     }
@@ -1588,6 +1619,7 @@ pub fn zh_or_direct_pinyin_paths(
     index: &ZhReadingIndex,
     options: PinyinReadingOptions,
 ) -> Result<Vec<String>, CnLatticeError> {
+    let options = validate_pinyin_options(options)?;
     if can_build_direct_pinyin_input(input) {
         return Ok(vec![normalize_direct_pinyin_input(input)]);
     }
@@ -1611,6 +1643,14 @@ pub fn zh_or_direct_pinyin_paths(
     Err(CnLatticeError::UnsupportedDirectInput {
         surface: input.to_string(),
     })
+}
+
+fn validate_pinyin_options(
+    options: PinyinReadingOptions,
+) -> Result<PinyinReadingOptions, CnLatticeError> {
+    options
+        .validate()
+        .map_err(|err| CnLatticeError::ArtifactPayload(err.to_string()))
 }
 
 fn max_normalized_similarity(left_paths: &[String], right_paths: &[String]) -> f64 {
@@ -2443,6 +2483,64 @@ mod tests {
             err,
             ZhArtifactPayloadError::ArtifactLimitExceeded {
                 field: "reading_count",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn rejects_excessive_pinyin_reading_options() {
+        let index = ZhReadingIndex::default();
+        let err = index
+            .try_reading_paths_with_stats(
+                "威士忌",
+                PinyinReadingOptions {
+                    max_span_chars: MAX_QUERY_SPAN_CHARS + 1,
+                    ..PinyinReadingOptions::default()
+                },
+            )
+            .unwrap_err();
+
+        assert!(matches!(
+            err,
+            ZhArtifactPayloadError::ArtifactLimitExceeded {
+                field: "max_span_chars",
+                ..
+            }
+        ));
+
+        let err = index
+            .try_reading_paths_with_stats(
+                "威士忌",
+                PinyinReadingOptions {
+                    max_paths: MAX_QUERY_PATHS + 1,
+                    ..PinyinReadingOptions::default()
+                },
+            )
+            .unwrap_err();
+
+        assert!(matches!(
+            err,
+            ZhArtifactPayloadError::ArtifactLimitExceeded {
+                field: "max_paths",
+                ..
+            }
+        ));
+
+        let err = index
+            .try_reading_paths_with_stats(
+                "威士忌",
+                PinyinReadingOptions {
+                    max_readings_per_segment: Some(MAX_QUERY_READINGS_PER_SEGMENT + 1),
+                    ..PinyinReadingOptions::default()
+                },
+            )
+            .unwrap_err();
+
+        assert!(matches!(
+            err,
+            ZhArtifactPayloadError::ArtifactLimitExceeded {
+                field: "max_readings_per_segment",
                 ..
             }
         ));

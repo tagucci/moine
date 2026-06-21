@@ -52,6 +52,7 @@ pub(crate) fn run_unidic_artifact_archive(
 pub(crate) fn run_unidic_artifact_metadata(
     options: UnidicArtifactMetadataCliOptions,
 ) -> Result<(), Box<dyn Error>> {
+    let dictionary_options = validate_dictionary_options(options.dictionary_options)?;
     let index = UnidicReadingIndex::from_lex_csv_path_with_options(
         &options.lex_csv,
         options.index_options,
@@ -65,7 +66,7 @@ pub(crate) fn run_unidic_artifact_metadata(
         source_version: options.source_version,
         source_lex_csv: options.lex_csv.clone(),
         index_options: options.index_options,
-        query_defaults: options.dictionary_options,
+        query_defaults: dictionary_options,
         license: UnidicArtifactLicense::default(),
     });
     let yaml = serde_yaml::to_string(&metadata)?;
@@ -82,6 +83,7 @@ pub(crate) fn run_unidic_artifact_metadata(
 pub(crate) fn run_unidic_artifact_bundle(
     options: UnidicArtifactBundleCliOptions,
 ) -> Result<(), Box<dyn Error>> {
+    let dictionary_options = validate_dictionary_options(options.dictionary_options)?;
     let index = UnidicReadingIndex::from_lex_csv_path_with_options(
         &options.lex_csv,
         options.index_options,
@@ -106,7 +108,7 @@ pub(crate) fn run_unidic_artifact_bundle(
         source_version: options.source_version,
         source_lex_csv: options.lex_csv.clone(),
         index_options: options.index_options,
-        query_defaults: options.dictionary_options,
+        query_defaults: dictionary_options,
         license: UnidicArtifactLicense::default(),
     });
     metadata.payload.file_digest_algorithm =
@@ -136,6 +138,7 @@ pub(crate) fn run_unidic_artifact_bundle(
 pub(crate) fn run_sudachi_artifact_bundle(
     options: SudachiArtifactBundleCliOptions,
 ) -> Result<(), Box<dyn Error>> {
+    let dictionary_options = validate_dictionary_options(options.dictionary_options)?;
     let index = UnidicReadingIndex::from_sudachi_lex_csv_path_with_options(
         &options.lex_csv,
         options.index_options,
@@ -160,7 +163,7 @@ pub(crate) fn run_sudachi_artifact_bundle(
             source_version: options.source_version,
             source_lex_csv: options.lex_csv.clone(),
             index_options: UnidicIndexOptions::default(),
-            query_defaults: options.dictionary_options,
+            query_defaults: dictionary_options,
             license,
         },
         moine_ja::UnidicArtifactBuild {
@@ -618,6 +621,7 @@ pub(crate) fn verify_unidic_artifact_bundle(
     let metadata_path = PathBuf::from(metadata);
     let metadata_yaml = fs::read_to_string(&metadata_path)?;
     let metadata = serde_yaml::from_str::<UnidicArtifactMetadata>(&metadata_yaml)?;
+    validate_dictionary_options(dictionary_options_from_metadata(&metadata))?;
     let bundle_dir = bundle_dir.map(PathBuf::from).unwrap_or_else(|| {
         metadata_path
             .parent()
@@ -684,6 +688,7 @@ pub(crate) fn load_unidic_artifact_bundle_for_runtime(
     let read_metadata_start = Instant::now();
     let metadata_yaml = fs::read_to_string(&metadata_path)?;
     let metadata = serde_yaml::from_str::<UnidicArtifactMetadata>(&metadata_yaml)?;
+    validate_dictionary_options(dictionary_options_from_metadata(&metadata))?;
     let read_metadata = read_metadata_start.elapsed();
 
     let bundle_dir = bundle_dir.map(PathBuf::from).unwrap_or_else(|| {
@@ -761,6 +766,14 @@ pub(crate) fn dictionary_options_from_metadata(
         longest_match_only: metadata.query_defaults.longest_match_only,
         max_readings_per_segment: metadata.query_defaults.max_readings_per_segment,
     }
+}
+
+fn validate_dictionary_options(
+    options: DictionaryReadingOptions,
+) -> Result<DictionaryReadingOptions, Box<dyn Error>> {
+    options.validate().map_err(|err| {
+        Box::new(CliError::ArtifactVerificationFailed(err.to_string())) as Box<dyn Error>
+    })
 }
 
 pub(crate) fn verify_payload_file_digest(

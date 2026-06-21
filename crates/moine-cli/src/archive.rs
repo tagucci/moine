@@ -12,6 +12,11 @@ use flate2::{read::GzDecoder, write::GzEncoder, Compression, GzBuilder};
 use crate::args::{ArchiveCompression, CliError};
 
 const ZSTD_COMPRESSION_LEVEL: i32 = 19;
+pub(crate) const MAX_ARCHIVE_ENTRIES: u64 = 1024;
+const MAX_ARCHIVE_TOTAL_EXTRACTED_BYTES: u64 = 1024 * 1024 * 1024;
+const MAX_ARCHIVE_ENTRY_BYTES: u64 = 512 * 1024 * 1024;
+const MAX_ARCHIVE_PATH_BYTES: usize = 4096;
+const MAX_ARCHIVE_PATH_DEPTH: usize = 16;
 
 pub(crate) struct ArchiveEntry {
     pub(crate) source: PathBuf,
@@ -116,8 +121,18 @@ pub(crate) fn extract_tar_stream(
     fs::create_dir_all(output_dir)?;
     let mut archive = tar::Archive::new(reader);
     let mut root_name = None::<PathBuf>;
+    let mut entry_count = 0_u64;
+    let mut total_extracted_bytes = 0_u64;
     for entry in archive.entries()? {
         let mut entry = entry?;
+        entry_count = entry_count.checked_add(1).ok_or_else(|| {
+            CliError::ArtifactVerificationFailed("archive entry count overflowed".to_string())
+        })?;
+        if entry_count > MAX_ARCHIVE_ENTRIES {
+            return Err(Box::new(CliError::ArtifactVerificationFailed(format!(
+                "archive entry count {entry_count} exceeds limit {MAX_ARCHIVE_ENTRIES}"
+            ))));
+        }
         let entry_type = entry.header().entry_type();
         if !entry_type.is_file() && !entry_type.is_dir() {
             return Err(Box::new(CliError::ArtifactVerificationFailed(format!(
@@ -126,6 +141,20 @@ pub(crate) fn extract_tar_stream(
             ))));
         }
         let path = entry.path()?.to_path_buf();
+        let path_bytes = path.to_string_lossy().len();
+        if path_bytes > MAX_ARCHIVE_PATH_BYTES {
+            return Err(Box::new(CliError::ArtifactVerificationFailed(format!(
+                "archive path {} length {path_bytes} exceeds limit {MAX_ARCHIVE_PATH_BYTES}",
+                path.display()
+            ))));
+        }
+        let path_depth = path.components().count();
+        if path_depth > MAX_ARCHIVE_PATH_DEPTH {
+            return Err(Box::new(CliError::ArtifactVerificationFailed(format!(
+                "archive path {} depth {path_depth} exceeds limit {MAX_ARCHIVE_PATH_DEPTH}",
+                path.display()
+            ))));
+        }
         let first_component = path.components().next().ok_or_else(|| {
             CliError::ArtifactVerificationFailed("empty archive path".to_string())
         })?;
@@ -156,6 +185,28 @@ pub(crate) fn extract_tar_stream(
                 "unsafe archive path: {}",
                 path.display()
             ))));
+        }
+        if entry_type.is_file() {
+            let entry_bytes = entry.header().size()?;
+            if entry_bytes > MAX_ARCHIVE_ENTRY_BYTES {
+                return Err(Box::new(CliError::ArtifactVerificationFailed(format!(
+                    "archive entry {} size {entry_bytes} exceeds limit {MAX_ARCHIVE_ENTRY_BYTES}",
+                    path.display()
+                ))));
+            }
+            total_extracted_bytes =
+                total_extracted_bytes
+                    .checked_add(entry_bytes)
+                    .ok_or_else(|| {
+                        CliError::ArtifactVerificationFailed(
+                            "archive extracted size overflowed".to_string(),
+                        )
+                    })?;
+            if total_extracted_bytes > MAX_ARCHIVE_TOTAL_EXTRACTED_BYTES {
+                return Err(Box::new(CliError::ArtifactVerificationFailed(format!(
+                    "archive extracted size {total_extracted_bytes} exceeds limit {MAX_ARCHIVE_TOTAL_EXTRACTED_BYTES}"
+                ))));
+            }
         }
         let target = output_dir.join(&path);
         if let Some(parent) = target.parent() {
@@ -201,11 +252,17 @@ pub(crate) struct TempDir {
 
 impl TempDir {
     pub(crate) fn new(prefix: &str) -> Result<Self, std::io::Error> {
+        Self::new_in(env::temp_dir(), prefix)
+    }
+
+    pub(crate) fn new_in(parent: impl AsRef<Path>, prefix: &str) -> Result<Self, std::io::Error> {
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_nanos();
-        let path = env::temp_dir().join(format!("{prefix}-{}-{nanos}", process::id()));
+        let path = parent
+            .as_ref()
+            .join(format!("{prefix}-{}-{nanos}", process::id()));
         fs::create_dir_all(&path)?;
         Ok(Self { path })
     }

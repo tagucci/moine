@@ -1,6 +1,6 @@
 [package]
 name = "moine-zh"
-version = "0.2.0"
+version = "0.2.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -16,7 +16,7 @@ include = ["Cargo.toml", "README.md", "src/**/*.rs"]
 [dependencies]
 fst = "0.4"
 memmap2 = "0.9"
-moine-core = { version = "0.2.0", path = "../moine-core" }
+moine-core = { version = "0.2.1", path = "../moine-core" }
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
 sha2 = "0.10"
