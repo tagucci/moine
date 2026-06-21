@@ -29,7 +29,7 @@ language:
 0
 
 >>> moine.distance("じゅじゅつかいせん", "呪術廻戦", lang="ja-unidic")
-5
+3
 
 >>> moine.distance("じゅじゅつかいせん", "呪術廻戦", lang="ja-sudachi")
 0

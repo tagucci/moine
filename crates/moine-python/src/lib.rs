@@ -51,7 +51,7 @@ fn raw_distance_pair_with_cutoff(
     score_cutoff: Option<usize>,
 ) -> PyResult<usize> {
     if let Some(cutoff) = score_cutoff {
-        return Ok(levenshtein_str_with_cutoff(left, right, cutoff).unwrap_or(cutoff + 1));
+        return Ok(levenshtein_str_with_cutoff(left, right, cutoff).unwrap_or(cutoff_miss(cutoff)));
     }
     Ok(apply_distance_score_cutoff(
         levenshtein_str(left, right),
@@ -79,7 +79,7 @@ fn raw_damerau_distance_pair_with_cutoff(
     if let Some(cutoff) = score_cutoff {
         return Ok(try_damerau_levenshtein_str_with_cutoff(left, right, cutoff)
             .map_err(distance_error)?
-            .unwrap_or(cutoff + 1));
+            .unwrap_or(cutoff_miss(cutoff)));
     }
     let distance = try_damerau_levenshtein_str(left, right).map_err(distance_error)?;
     Ok(apply_distance_score_cutoff(distance, score_cutoff))
@@ -126,6 +126,10 @@ fn validate_distance_score_cutoff(
         ));
     }
     Ok(Some(score_cutoff as usize))
+}
+
+fn cutoff_miss(cutoff: usize) -> usize {
+    cutoff.saturating_add(1)
 }
 
 #[pyfunction(signature = (left, right, *, score_cutoff = None))]
@@ -423,7 +427,9 @@ impl PyJapaneseDictionary {
             max_paths: metadata.query_defaults.max_paths,
             longest_match_only: metadata.query_defaults.longest_match_only,
             max_readings_per_segment: metadata.query_defaults.max_readings_per_segment,
-        };
+        }
+        .validate()
+        .map_err(|err| PyValueError::new_err(err.to_string()))?;
 
         Ok(Self {
             index,
@@ -468,7 +474,7 @@ impl PyJapaneseDictionary {
             max_span_chars,
             max_paths,
             longest_only,
-        );
+        )?;
         py.detach(move || {
             let left_lattice = unidic_or_direct_lattice(&left, &self.index, options)
                 .map_err(|err| PyValueError::new_err(err.to_string()))?;
@@ -497,7 +503,7 @@ impl PyJapaneseDictionary {
             max_span_chars,
             max_paths,
             longest_only,
-        );
+        )?;
         py.detach(move || {
             let left_lattice = unidic_or_direct_lattice(&left, &self.index, options)
                 .map_err(|err| PyValueError::new_err(err.to_string()))?;
@@ -527,7 +533,7 @@ impl PyJapaneseDictionary {
             max_span_chars,
             max_paths,
             longest_only,
-        );
+        )?;
         py.detach(move || {
             let left_lattice = unidic_or_direct_lattice(&left, &self.index, options)
                 .map_err(|err| PyValueError::new_err(err.to_string()))?;
@@ -562,7 +568,7 @@ impl PyJapaneseDictionary {
             max_span_chars,
             max_paths,
             longest_only,
-        );
+        )?;
         py.detach(move || {
             let left_lattice = unidic_or_direct_lattice(&left, &self.index, options)
                 .map_err(|err| PyValueError::new_err(err.to_string()))?;
@@ -592,7 +598,7 @@ impl PyJapaneseDictionary {
             max_span_chars,
             max_paths,
             longest_only,
-        );
+        )?;
         py.detach(move || {
             let left_lattice = unidic_or_direct_lattice(&left, &self.index, options)
                 .map_err(|err| PyValueError::new_err(err.to_string()))?;
@@ -622,7 +628,7 @@ impl PyJapaneseDictionary {
             max_span_chars,
             max_paths,
             longest_only,
-        );
+        )?;
         py.detach(move || {
             let score =
                 normalized_similarity_with_unidic_index(&left, &right, &self.index, options)
@@ -650,7 +656,7 @@ impl PyJapaneseDictionary {
             max_span_chars,
             max_paths,
             longest_only,
-        );
+        )?;
         py.detach(move || {
             let score =
                 normalized_similarity_with_unidic_index(&left, &right, &self.index, options)
@@ -703,7 +709,7 @@ impl PyJapaneseDictionary {
             reading_max_span_chars,
             max_paths,
             longest_only,
-        );
+        )?;
         py.detach(move || {
             let query_paths = unidic_or_direct_romaji_paths(&query, &self.index, options)
                 .map_err(|err| PyValueError::new_err(err.to_string()))?;
@@ -749,7 +755,7 @@ impl PyJapaneseDictionary {
             reading_max_span_chars,
             max_paths,
             longest_only,
-        );
+        )?;
         py.detach(move || {
             let query_paths = unidic_or_direct_romaji_paths(&query, &self.index, options)
                 .map_err(|err| PyValueError::new_err(err.to_string()))?;
@@ -787,7 +793,7 @@ impl PyJapaneseDictionary {
             max_span_chars,
             max_paths,
             longest_only,
-        );
+        )?;
         py.detach(move || {
             let query_lattices = ja_lattices(&queries, &self.index, options)?;
             let choice_lattices = ja_lattices(&choices, &self.index, options)?;
@@ -812,7 +818,7 @@ impl PyJapaneseDictionary {
             max_span_chars,
             max_paths,
             longest_only,
-        );
+        )?;
         py.detach(move || {
             let query_lattices = ja_lattices(&queries, &self.index, options)?;
             let choice_lattices = ja_lattices(&choices, &self.index, options)?;
@@ -838,7 +844,7 @@ impl PyJapaneseDictionary {
             max_span_chars,
             max_paths,
             longest_only,
-        );
+        )?;
         py.detach(move || {
             let query_lattices = ja_lattices(&queries, &self.index, options)?;
             let choice_lattices = ja_lattices(&choices, &self.index, options)?;
@@ -869,7 +875,7 @@ impl PyJapaneseDictionary {
             max_span_chars,
             max_paths,
             longest_only,
-        );
+        )?;
         py.detach(move || {
             let query_paths = ja_path_sets(&queries, &self.index, options)?;
             let choice_paths = ja_path_sets(&choices, &self.index, options)?;
@@ -894,7 +900,7 @@ impl PyJapaneseDictionary {
             max_span_chars,
             max_paths,
             longest_only,
-        );
+        )?;
         py.detach(move || {
             let query_paths = ja_path_sets(&queries, &self.index, options)?;
             let choice_paths = ja_path_sets(&choices, &self.index, options)?;
@@ -910,7 +916,7 @@ impl PyJapaneseDictionary {
         max_span_chars: Option<usize>,
         max_paths: Option<usize>,
         longest_only: Option<bool>,
-    ) -> DictionaryReadingOptions {
+    ) -> PyResult<DictionaryReadingOptions> {
         let mut options = self.default_options;
         if let Some(max_readings_per_segment) = max_readings_per_segment {
             options.max_readings_per_segment = Some(max_readings_per_segment);
@@ -925,6 +931,8 @@ impl PyJapaneseDictionary {
             options.longest_match_only = longest_only;
         }
         options
+            .validate()
+            .map_err(|err| PyValueError::new_err(err.to_string()))
     }
 }
 
@@ -982,7 +990,9 @@ impl PyChineseDictionary {
             max_paths: metadata.query_defaults.max_paths,
             longest_match_only: metadata.query_defaults.longest_match_only,
             max_readings_per_segment: metadata.query_defaults.max_readings_per_segment,
-        };
+        }
+        .validate()
+        .map_err(|err| PyValueError::new_err(err.to_string()))?;
 
         Ok(Self {
             index,
@@ -1027,7 +1037,7 @@ impl PyChineseDictionary {
             max_span_chars,
             max_paths,
             longest_only,
-        );
+        )?;
         py.detach(move || {
             let left_lattice = zh_or_direct_lattice(&left, &self.index, options)
                 .map_err(|err| PyValueError::new_err(err.to_string()))?;
@@ -1056,7 +1066,7 @@ impl PyChineseDictionary {
             max_span_chars,
             max_paths,
             longest_only,
-        );
+        )?;
         py.detach(move || {
             let left_lattice = zh_or_direct_lattice(&left, &self.index, options)
                 .map_err(|err| PyValueError::new_err(err.to_string()))?;
@@ -1086,7 +1096,7 @@ impl PyChineseDictionary {
             max_span_chars,
             max_paths,
             longest_only,
-        );
+        )?;
         py.detach(move || {
             let left_lattice = zh_or_direct_lattice(&left, &self.index, options)
                 .map_err(|err| PyValueError::new_err(err.to_string()))?;
@@ -1121,7 +1131,7 @@ impl PyChineseDictionary {
             max_span_chars,
             max_paths,
             longest_only,
-        );
+        )?;
         py.detach(move || {
             let left_lattice = zh_or_direct_lattice(&left, &self.index, options)
                 .map_err(|err| PyValueError::new_err(err.to_string()))?;
@@ -1151,7 +1161,7 @@ impl PyChineseDictionary {
             max_span_chars,
             max_paths,
             longest_only,
-        );
+        )?;
         py.detach(move || {
             let left_lattice = zh_or_direct_lattice(&left, &self.index, options)
                 .map_err(|err| PyValueError::new_err(err.to_string()))?;
@@ -1181,7 +1191,7 @@ impl PyChineseDictionary {
             max_span_chars,
             max_paths,
             longest_only,
-        );
+        )?;
         py.detach(move || {
             let score = normalized_similarity_with_zh_index(&left, &right, &self.index, options)
                 .map_err(|err| PyValueError::new_err(err.to_string()))?;
@@ -1208,7 +1218,7 @@ impl PyChineseDictionary {
             max_span_chars,
             max_paths,
             longest_only,
-        );
+        )?;
         py.detach(move || {
             let score = normalized_similarity_with_zh_index(&left, &right, &self.index, options)
                 .map_err(|err| PyValueError::new_err(err.to_string()))?;
@@ -1260,7 +1270,7 @@ impl PyChineseDictionary {
             reading_max_span_chars,
             max_paths,
             longest_only,
-        );
+        )?;
         py.detach(move || {
             let query_paths = zh_or_direct_pinyin_paths(&query, &self.index, options)
                 .map_err(|err| PyValueError::new_err(err.to_string()))?;
@@ -1306,7 +1316,7 @@ impl PyChineseDictionary {
             reading_max_span_chars,
             max_paths,
             longest_only,
-        );
+        )?;
         py.detach(move || {
             let query_paths = zh_or_direct_pinyin_paths(&query, &self.index, options)
                 .map_err(|err| PyValueError::new_err(err.to_string()))?;
@@ -1344,7 +1354,7 @@ impl PyChineseDictionary {
             max_span_chars,
             max_paths,
             longest_only,
-        );
+        )?;
         py.detach(move || {
             let query_lattices = zh_lattices(&queries, &self.index, options)?;
             let choice_lattices = zh_lattices(&choices, &self.index, options)?;
@@ -1369,7 +1379,7 @@ impl PyChineseDictionary {
             max_span_chars,
             max_paths,
             longest_only,
-        );
+        )?;
         py.detach(move || {
             let query_lattices = zh_lattices(&queries, &self.index, options)?;
             let choice_lattices = zh_lattices(&choices, &self.index, options)?;
@@ -1395,7 +1405,7 @@ impl PyChineseDictionary {
             max_span_chars,
             max_paths,
             longest_only,
-        );
+        )?;
         py.detach(move || {
             let query_lattices = zh_lattices(&queries, &self.index, options)?;
             let choice_lattices = zh_lattices(&choices, &self.index, options)?;
@@ -1426,7 +1436,7 @@ impl PyChineseDictionary {
             max_span_chars,
             max_paths,
             longest_only,
-        );
+        )?;
         py.detach(move || {
             let query_paths = zh_path_sets(&queries, &self.index, options)?;
             let choice_paths = zh_path_sets(&choices, &self.index, options)?;
@@ -1451,7 +1461,7 @@ impl PyChineseDictionary {
             max_span_chars,
             max_paths,
             longest_only,
-        );
+        )?;
         py.detach(move || {
             let query_paths = zh_path_sets(&queries, &self.index, options)?;
             let choice_paths = zh_path_sets(&choices, &self.index, options)?;
@@ -1467,7 +1477,7 @@ impl PyChineseDictionary {
         max_span_chars: Option<usize>,
         max_paths: Option<usize>,
         longest_only: Option<bool>,
-    ) -> PinyinReadingOptions {
+    ) -> PyResult<PinyinReadingOptions> {
         let mut options = self.default_options;
         if let Some(max_readings_per_segment) = max_readings_per_segment {
             options.max_readings_per_segment = Some(max_readings_per_segment);
@@ -1482,6 +1492,8 @@ impl PyChineseDictionary {
             options.longest_match_only = longest_only;
         }
         options
+            .validate()
+            .map_err(|err| PyValueError::new_err(err.to_string()))
     }
 }
 
@@ -2108,7 +2120,7 @@ fn string_distance_chars_with_cutoff(
     if let Some(cutoff) = score_cutoff {
         return workspace
             .levenshtein_with_cutoff(left, right, cutoff)
-            .unwrap_or(cutoff + 1);
+            .unwrap_or(cutoff_miss(cutoff));
     }
     workspace.levenshtein(left, right)
 }
@@ -2122,7 +2134,7 @@ fn string_damerau_distance_chars_with_cutoff(
     if let Some(cutoff) = score_cutoff {
         return workspace
             .damerau_levenshtein_with_cutoff(left, right, cutoff)
-            .unwrap_or(cutoff + 1);
+            .unwrap_or(cutoff_miss(cutoff));
     }
     workspace.damerau_levenshtein(left, right)
 }
@@ -2401,7 +2413,7 @@ fn distance_with_cutoff_workspace(
         return Ok(workspace
             .try_distance_with_cutoff(left_lattice, right_lattice, cutoff)
             .map_err(distance_error)?
-            .unwrap_or(cutoff + 1));
+            .unwrap_or(cutoff_miss(cutoff)));
     }
     workspace
         .try_distance(left_lattice, right_lattice)
@@ -2411,7 +2423,7 @@ fn distance_with_cutoff_workspace(
 fn apply_distance_score_cutoff(distance: usize, score_cutoff: Option<usize>) -> usize {
     if let Some(cutoff) = score_cutoff {
         if distance > cutoff {
-            return cutoff + 1;
+            return cutoff_miss(cutoff);
         }
     }
     distance
@@ -2502,7 +2514,7 @@ fn damerau_distance_with_cutoff_workspace(
         return Ok(workspace
             .try_damerau_distance_with_cutoff(left_lattice, right_lattice, cutoff)
             .map_err(distance_error)?
-            .unwrap_or(cutoff + 1));
+            .unwrap_or(cutoff_miss(cutoff)));
     }
     workspace
         .try_damerau_distance(left_lattice, right_lattice)
@@ -2587,8 +2599,13 @@ mod tests {
         Python::attach(|py| {
             assert_eq!(distance(py, "abc", "adc", None).unwrap(), 1);
             assert_eq!(distance(py, "abc", "adc", Some(0)).unwrap(), 1);
+            assert_eq!(distance(py, "abc", "adc", Some(usize::MAX)).unwrap(), 1);
             assert_eq!(damerau_distance(py, "abc", "acb", None).unwrap(), 1);
             assert_eq!(damerau_distance(py, "abc", "acb", Some(0)).unwrap(), 1);
+            assert_eq!(
+                damerau_distance(py, "abc", "acb", Some(usize::MAX)).unwrap(),
+                1
+            );
             assert_eq!(combined_distance(py, "abc", "acb", None).unwrap(), 1);
             let zero = 0usize.into_pyobject(py).unwrap();
             assert_eq!(

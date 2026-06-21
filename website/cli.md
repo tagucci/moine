@@ -67,25 +67,25 @@ dictionary reading paths available for `呪術廻戦`.
 UNIDIC_DIR="$(moine where ja-unidic)"
 
 moine compare \
-  --left "ジュジュツカイセン" \
-  --right "呪術廻戦" \
+  --left "呪術廻戦" \
+  --right "ジュジュツカイセン" \
   --artifact-metadata "$UNIDIC_DIR/metadata.yaml" \
   --romaji-lattice jujutsu-unidic.svg \
   --output-format svg
 ```
 
 The UniDic-CWJ artifact does not provide a zero-distance title reading for this
-pair, so the best path remains five edits away:
+pair, so the best path remains three edits away:
 
 ```text
 source_name:        UniDic-CWJ
-ja_dict_lattice: 5
+ja_dict_lattice: 3
 ja_dict_lattice_best_path:
-  left:  jujutukaisem
-  right: jujutumawarusem
+  left:  jujutumawasem
+  right: jujutukaisem
 ```
 
-![UniDic-CWJ romaji lattice for ジュジュツカイセン and 呪術廻戦](assets/jujutsu-unidic-lattice.svg){ .lattice-preview loading=lazy }
+![UniDic-CWJ romaji lattice for 呪術廻戦 and ジュジュツカイセン](assets/jujutsu-unidic-lattice.svg){ .lattice-preview loading=lazy }
 
 Run the same comparison against the SudachiDict-full artifact:
 
@@ -93,8 +93,8 @@ Run the same comparison against the SudachiDict-full artifact:
 SUDACHI_DIR="$(moine where ja-sudachi)"
 
 moine compare \
-  --left "ジュジュツカイセン" \
-  --right "呪術廻戦" \
+  --left "呪術廻戦" \
+  --right "ジュジュツカイセン" \
   --artifact-metadata "$SUDACHI_DIR/metadata.yaml" \
   --romaji-lattice jujutsu-sudachi.svg \
   --output-format svg
@@ -111,7 +111,7 @@ ja_dict_lattice_best_path:
   right: jujutukaisem
 ```
 
-![SudachiDict romaji lattice for ジュジュツカイセン and 呪術廻戦](assets/jujutsu-sudachi-lattice.svg){ .lattice-preview loading=lazy }
+![SudachiDict romaji lattice for 呪術廻戦 and ジュジュツカイセン](assets/jujutsu-sudachi-lattice.svg){ .lattice-preview loading=lazy }
 
 The highlighted route is the best aligned romaji path; muted arcs are alternate
 reading paths considered by the lattice.

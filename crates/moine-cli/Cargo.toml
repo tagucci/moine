@@ -1,6 +1,6 @@
 [package]
 name = "moine-cli"
-version = "0.2.0"
+version = "0.2.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -15,9 +15,9 @@ include = ["Cargo.toml", "README.md", "src/**/*.rs"]
 
 [dependencies]
 flate2 = "1"
-moine-core = { version = "0.2.0", path = "../moine-core" }
-moine-zh = { version = "0.2.0", path = "../moine-zh" }
-moine-ja = { version = "0.2.0", path = "../moine-ja" }
+moine-core = { version = "0.2.1", path = "../moine-core" }
+moine-zh = { version = "0.2.1", path = "../moine-zh" }
+moine-ja = { version = "0.2.1", path = "../moine-ja" }
 serde_yaml = "0.9"
 sha2 = "0.10"
 tar = "0.4"

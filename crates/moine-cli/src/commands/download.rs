@@ -16,8 +16,8 @@ use crate::commands::unidic_artifact::verify_unidic_artifact_bundle;
 use crate::commands::zh_artifact::verify_zh_artifact_bundle;
 
 const DOWNLOAD_TIMEOUT_SECS: u64 = 60;
-const MAX_DOWNLOAD_BYTES: u64 = 512 * 1024 * 1024;
-const MAX_CHECKSUM_MANIFEST_BYTES: u64 = 1024 * 1024;
+pub(crate) const MAX_DOWNLOAD_BYTES: u64 = 512 * 1024 * 1024;
+pub(crate) const MAX_CHECKSUM_MANIFEST_BYTES: u64 = 1024 * 1024;
 
 pub(crate) fn run_download(options: DownloadCliOptions) -> Result<(), Box<dyn Error>> {
     let cache_dir = options
@@ -40,7 +40,9 @@ pub(crate) fn run_download(options: DownloadCliOptions) -> Result<(), Box<dyn Er
         }
     }
 
-    let extracted_root = extract_artifact_archive(&archive_path, &temp.path().join("extract"))?;
+    fs::create_dir_all(&cache_dir)?;
+    let staging = TempDir::new_in(&cache_dir, ".moine-install")?;
+    let extracted_root = extract_artifact_archive(&archive_path, &staging.path().join("extract"))?;
     let metadata = extracted_root.join("metadata.yaml");
     if !metadata.is_file() {
         return Err(Box::new(CliError::ArtifactVerificationFailed(format!(
@@ -50,7 +52,6 @@ pub(crate) fn run_download(options: DownloadCliOptions) -> Result<(), Box<dyn Er
     }
     verify_downloaded_bundle(options.spec.language, &metadata)?;
 
-    fs::create_dir_all(&cache_dir)?;
     let destination = cache_dir.join(extracted_root.file_name().ok_or_else(|| {
         CliError::ArtifactVerificationFailed(format!(
             "extracted artifact root {} has no file name",
@@ -59,12 +60,14 @@ pub(crate) fn run_download(options: DownloadCliOptions) -> Result<(), Box<dyn Er
     })?);
     if destination.exists() {
         if !options.force {
+            verify_existing_installed_bundle(options.spec.language, &destination)?;
             println!("{}", destination.display());
             return Ok(());
         }
-        fs::remove_dir_all(&destination)?;
+        replace_dir(&extracted_root, &destination)?;
+    } else {
+        move_dir(&extracted_root, &destination)?;
     }
-    move_dir(&extracted_root, &destination)?;
     println!("{}", destination.display());
     Ok(())
 }
@@ -129,21 +132,33 @@ pub(crate) fn copy_uri_to_path(uri: &str, output: &Path) -> Result<(), Box<dyn E
         let response = ureq::get(uri)
             .timeout(Duration::from_secs(DOWNLOAD_TIMEOUT_SECS))
             .call()?;
-        let mut reader = response.into_reader();
-        let mut file = fs::File::create(output)?;
-        let copied = std::io::copy(&mut reader.by_ref().take(MAX_DOWNLOAD_BYTES + 1), &mut file)?;
-        if copied > MAX_DOWNLOAD_BYTES {
-            return Err(Box::new(CliError::ArtifactVerificationFailed(format!(
-                "download exceeded maximum size of {MAX_DOWNLOAD_BYTES} bytes"
-            ))));
-        }
-        return Ok(());
+        return copy_reader_to_path_limited(response.into_reader(), output);
     }
     if let Some(path) = uri.strip_prefix("file://") {
-        fs::copy(path, output)?;
-        return Ok(());
+        return copy_file_to_path_limited(Path::new(path), output);
     }
-    fs::copy(uri, output)?;
+    copy_file_to_path_limited(Path::new(uri), output)
+}
+
+fn copy_file_to_path_limited(path: &Path, output: &Path) -> Result<(), Box<dyn Error>> {
+    let file = fs::File::open(path)?;
+    let file_size = file.metadata()?.len();
+    if file_size > MAX_DOWNLOAD_BYTES {
+        return Err(Box::new(CliError::ArtifactVerificationFailed(format!(
+            "download exceeded maximum size of {MAX_DOWNLOAD_BYTES} bytes"
+        ))));
+    }
+    copy_reader_to_path_limited(file, output)
+}
+
+fn copy_reader_to_path_limited(mut reader: impl Read, output: &Path) -> Result<(), Box<dyn Error>> {
+    let mut file = fs::File::create(output)?;
+    let copied = std::io::copy(&mut reader.by_ref().take(MAX_DOWNLOAD_BYTES + 1), &mut file)?;
+    if copied > MAX_DOWNLOAD_BYTES {
+        return Err(Box::new(CliError::ArtifactVerificationFailed(format!(
+            "download exceeded maximum size of {MAX_DOWNLOAD_BYTES} bytes"
+        ))));
+    }
     Ok(())
 }
 
@@ -152,22 +167,37 @@ pub(crate) fn read_uri_text(uri: &str) -> Result<String, Box<dyn Error>> {
         let response = ureq::get(uri)
             .timeout(Duration::from_secs(DOWNLOAD_TIMEOUT_SECS))
             .call()?;
-        let mut text = String::new();
-        let read = response
-            .into_reader()
-            .take(MAX_CHECKSUM_MANIFEST_BYTES + 1)
-            .read_to_string(&mut text)?;
-        if read as u64 > MAX_CHECKSUM_MANIFEST_BYTES {
-            return Err(Box::new(CliError::ArtifactVerificationFailed(format!(
-                "checksum manifest exceeded maximum size of {MAX_CHECKSUM_MANIFEST_BYTES} bytes"
-            ))));
-        }
-        return Ok(text);
+        return read_text_limited(response.into_reader());
     }
     if let Some(path) = uri.strip_prefix("file://") {
-        return Ok(fs::read_to_string(path)?);
+        return read_file_text_limited(Path::new(path));
     }
-    Ok(fs::read_to_string(uri)?)
+    read_file_text_limited(Path::new(uri))
+}
+
+fn read_file_text_limited(path: &Path) -> Result<String, Box<dyn Error>> {
+    let file = fs::File::open(path)?;
+    let file_size = file.metadata()?.len();
+    if file_size > MAX_CHECKSUM_MANIFEST_BYTES {
+        return Err(Box::new(CliError::ArtifactVerificationFailed(format!(
+            "checksum manifest exceeded maximum size of {MAX_CHECKSUM_MANIFEST_BYTES} bytes"
+        ))));
+    }
+    read_text_limited(file)
+}
+
+fn read_text_limited(mut reader: impl Read) -> Result<String, Box<dyn Error>> {
+    let mut text = String::new();
+    let read = reader
+        .by_ref()
+        .take(MAX_CHECKSUM_MANIFEST_BYTES + 1)
+        .read_to_string(&mut text)?;
+    if read as u64 > MAX_CHECKSUM_MANIFEST_BYTES {
+        return Err(Box::new(CliError::ArtifactVerificationFailed(format!(
+            "checksum manifest exceeded maximum size of {MAX_CHECKSUM_MANIFEST_BYTES} bytes"
+        ))));
+    }
+    Ok(text)
 }
 
 pub(crate) fn expected_sha256(
@@ -247,6 +277,81 @@ pub(crate) fn verify_downloaded_bundle(
         }
     }
     Ok(())
+}
+
+fn verify_existing_installed_bundle(
+    language: ArtifactLanguage,
+    destination: &Path,
+) -> Result<(), Box<dyn Error>> {
+    let metadata = destination.join("metadata.yaml");
+    if !metadata.is_file() {
+        return Err(Box::new(CliError::ArtifactVerificationFailed(format!(
+            "installed artifact has no metadata.yaml: {}",
+            destination.display()
+        ))));
+    }
+    verify_downloaded_bundle(language, &metadata)
+}
+
+fn replace_dir(source: &Path, destination: &Path) -> Result<(), Box<dyn Error>> {
+    let backup = replacement_backup_path(destination)?;
+    fs::rename(destination, &backup)?;
+    match move_dir(source, destination) {
+        Ok(()) => {
+            remove_path(&backup)?;
+            Ok(())
+        }
+        Err(err) => {
+            let _ = remove_path(destination);
+            let _ = fs::rename(&backup, destination);
+            Err(err)
+        }
+    }
+}
+
+fn remove_path(path: &Path) -> Result<(), Box<dyn Error>> {
+    let metadata = fs::symlink_metadata(path)?;
+    if metadata.file_type().is_dir() {
+        fs::remove_dir_all(path)?;
+    } else {
+        fs::remove_file(path)?;
+    }
+    Ok(())
+}
+
+fn replacement_backup_path(destination: &Path) -> Result<PathBuf, Box<dyn Error>> {
+    let parent = destination.parent().ok_or_else(|| {
+        CliError::ArtifactVerificationFailed(format!(
+            "installed artifact {} has no parent directory",
+            destination.display()
+        ))
+    })?;
+    let name = destination
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| {
+            CliError::ArtifactVerificationFailed(format!(
+                "installed artifact path is not UTF-8: {}",
+                destination.display()
+            ))
+        })?;
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    for index in 0..100 {
+        let candidate = parent.join(format!(
+            ".{name}.replacing-{}-{nanos}-{index}",
+            std::process::id()
+        ));
+        if !candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+    Err(Box::new(CliError::ArtifactVerificationFailed(format!(
+        "could not choose replacement path for {}",
+        destination.display()
+    ))))
 }
 
 fn verify_japanese_download_identity(

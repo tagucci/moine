@@ -9,7 +9,7 @@ import tempfile
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Literal
 
 Language = Literal["ja", "ja-unidic", "ja-sudachi", "zh"]
@@ -29,6 +29,11 @@ _RELEASE_BASE_URL = "https://github.com/tagucci/moine/releases/download"
 _DOWNLOAD_TIMEOUT_SECONDS = 60
 _MAX_DOWNLOAD_BYTES = 512 * 1024 * 1024
 _MAX_CHECKSUM_MANIFEST_BYTES = 1024 * 1024
+_MAX_ARCHIVE_ENTRIES = 1024
+_MAX_ARCHIVE_TOTAL_EXTRACTED_BYTES = 1024 * 1024 * 1024
+_MAX_ARCHIVE_ENTRY_BYTES = 512 * 1024 * 1024
+_MAX_ARCHIVE_PATH_BYTES = 4096
+_MAX_ARCHIVE_PATH_DEPTH = 16
 ARTIFACT_SPECS: dict[Language, ArtifactSpec] = {
     "ja": ArtifactSpec(
         lang="ja",
@@ -155,22 +160,25 @@ def _download_command(args: argparse.Namespace) -> int:
                     f"expected {expected_sha256}, got {actual_sha256}"
                 )
 
-        extracted_root = _extract_archive(archive_path, tmp_dir / "extract")
-        metadata = extracted_root / "metadata.yaml"
-        if not metadata.is_file():
-            raise RuntimeError(f"downloaded artifact has no metadata.yaml: {extracted_root}")
-        _verify_extracted_bundle(lang, metadata)
-
         cache_dir.mkdir(parents=True, exist_ok=True)
-        destination = cache_dir / extracted_root.name
-        if destination.exists():
-            if not args.force:
-                print(f"{destination}")
-                return 0
-            shutil.rmtree(destination)
-        shutil.move(os.fspath(extracted_root), os.fspath(destination))
-        print(f"{destination}")
-        return 0
+        with tempfile.TemporaryDirectory(prefix=".moine-install-", dir=cache_dir) as staging:
+            extracted_root = _extract_archive(archive_path, Path(staging) / "extract")
+            metadata = extracted_root / "metadata.yaml"
+            if not metadata.is_file():
+                raise RuntimeError(f"downloaded artifact has no metadata.yaml: {extracted_root}")
+            _verify_extracted_bundle(lang, metadata)
+
+            destination = cache_dir / extracted_root.name
+            if destination.exists():
+                if not args.force:
+                    _verify_existing_installed_bundle(lang, destination)
+                    print(f"{destination}")
+                    return 0
+                _replace_dir(extracted_root, destination)
+            else:
+                extracted_root.rename(destination)
+            print(f"{destination}")
+            return 0
 
 
 def _list_command(args: argparse.Namespace) -> int:
@@ -213,6 +221,42 @@ def _verify_extracted_bundle(lang: Language, metadata: Path) -> None:
         ChineseDictionary.load_bundle(os.fspath(metadata))
         return
     raise AssertionError("unreachable language branch")
+
+
+def _verify_existing_installed_bundle(lang: Language, destination: Path) -> None:
+    metadata = destination / "metadata.yaml"
+    if not metadata.is_file():
+        raise RuntimeError(f"installed artifact has no metadata.yaml: {destination}")
+    _verify_extracted_bundle(lang, metadata)
+
+
+def _replace_dir(source: Path, destination: Path) -> None:
+    backup = _replacement_backup_path(destination)
+    destination.rename(backup)
+    try:
+        source.rename(destination)
+    except Exception:
+        if destination.exists():
+            _remove_path(destination)
+        backup.rename(destination)
+        raise
+    _remove_path(backup)
+
+
+def _remove_path(path: Path) -> None:
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path)
+    else:
+        path.unlink()
+
+
+def _replacement_backup_path(destination: Path) -> Path:
+    parent = destination.parent
+    for index in range(100):
+        candidate = parent / f".{destination.name}.replacing-{os.getpid()}-{index}"
+        if not candidate.exists():
+            return candidate
+    raise RuntimeError(f"could not choose replacement path for {destination}")
 
 
 def _verify_japanese_download_identity(lang: Language, dictionary) -> None:
@@ -272,9 +316,9 @@ def _copy_uri_to_path(uri: str, output: Path) -> None:
                 _copy_limited(response, file, _MAX_DOWNLOAD_BYTES)
         return
     if parsed.scheme == "file":
-        shutil.copyfile(Path(urllib.request.url2pathname(parsed.path)), output)
+        _copy_file_limited(Path(urllib.request.url2pathname(parsed.path)), output)
         return
-    shutil.copyfile(Path(uri), output)
+    _copy_file_limited(Path(uri), output)
 
 
 def _read_uri_text(uri: str) -> str:
@@ -288,8 +332,28 @@ def _read_uri_text(uri: str) -> str:
                 )
             return data.decode("utf-8")
     if parsed.scheme == "file":
-        return Path(urllib.request.url2pathname(parsed.path)).read_text(encoding="utf-8")
-    return Path(uri).read_text(encoding="utf-8")
+        return _read_file_text_limited(
+            Path(urllib.request.url2pathname(parsed.path)),
+            _MAX_CHECKSUM_MANIFEST_BYTES,
+        )
+    return _read_file_text_limited(Path(uri), _MAX_CHECKSUM_MANIFEST_BYTES)
+
+
+def _copy_file_limited(source: Path, output: Path) -> None:
+    if source.stat().st_size > _MAX_DOWNLOAD_BYTES:
+        raise RuntimeError(f"download exceeded {_MAX_DOWNLOAD_BYTES} bytes")
+    with source.open("rb") as input_file, output.open("wb") as output_file:
+        _copy_limited(input_file, output_file, _MAX_DOWNLOAD_BYTES)
+
+
+def _read_file_text_limited(path: Path, max_bytes: int) -> str:
+    if path.stat().st_size > max_bytes:
+        raise RuntimeError(f"checksum manifest exceeded {max_bytes} bytes")
+    with path.open("rb") as file:
+        data = file.read(max_bytes + 1)
+    if len(data) > max_bytes:
+        raise RuntimeError(f"checksum manifest exceeded {max_bytes} bytes")
+    return data.decode("utf-8")
 
 
 def _copy_limited(source, output, max_bytes: int) -> None:
@@ -325,28 +389,69 @@ def _sha256_file(path: Path) -> str:
 
 def _extract_archive(archive: Path, output_dir: Path) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
+    destination_root = output_dir.resolve()
+    root_name: str | None = None
+    entry_count = 0
+    total_extracted_bytes = 0
     with tarfile.open(archive, "r:*") as tar:
-        members = tar.getmembers()
-        root_names = {Path(member.name).parts[0] for member in members if member.name}
-        if len(root_names) != 1:
-            raise RuntimeError("artifact archive must contain exactly one top-level directory")
-        root_name = root_names.pop()
-        destination_root = output_dir.resolve()
-        for member in members:
+        for member in tar:
+            entry_count += 1
+            if entry_count > _MAX_ARCHIVE_ENTRIES:
+                raise RuntimeError(
+                    f"archive entry count {entry_count} exceeded {_MAX_ARCHIVE_ENTRIES}"
+                )
             if not member.isdir() and not member.isfile():
                 raise RuntimeError(f"unsupported archive entry type: {member.name}")
-            target = (output_dir / member.name).resolve()
-            if destination_root not in target.parents and target != destination_root:
+            parts = _safe_archive_member_parts(member.name)
+            current_root = parts[0]
+            if root_name is None:
+                root_name = current_root
+            elif root_name != current_root:
+                raise RuntimeError("artifact archive must contain exactly one top-level directory")
+            target = output_dir.joinpath(*parts)
+            resolved_target = target.resolve()
+            if (
+                destination_root not in resolved_target.parents
+                and resolved_target != destination_root
+            ):
                 raise RuntimeError(f"unsafe archive path: {member.name}")
-        for member in members:
-            target = output_dir / member.name
             if member.isdir():
                 target.mkdir(parents=True, exist_ok=True)
                 continue
+            if member.size < 0:
+                raise RuntimeError(f"archive entry {member.name} has a negative size")
+            if member.size > _MAX_ARCHIVE_ENTRY_BYTES:
+                raise RuntimeError(
+                    f"archive entry {member.name} size {member.size} exceeded "
+                    f"{_MAX_ARCHIVE_ENTRY_BYTES}"
+                )
+            total_extracted_bytes += member.size
+            if total_extracted_bytes > _MAX_ARCHIVE_TOTAL_EXTRACTED_BYTES:
+                raise RuntimeError(
+                    f"archive extracted size {total_extracted_bytes} exceeded "
+                    f"{_MAX_ARCHIVE_TOTAL_EXTRACTED_BYTES}"
+                )
             target.parent.mkdir(parents=True, exist_ok=True)
             source = tar.extractfile(member)
             if source is None:
                 raise RuntimeError(f"missing archive file data: {member.name}")
             with source, target.open("wb") as output:
                 shutil.copyfileobj(source, output)
+    if root_name is None:
+        raise RuntimeError("artifact archive is empty")
     return output_dir / root_name
+
+
+def _safe_archive_member_parts(name: str) -> tuple[str, ...]:
+    if not name or "\\" in name or len(name.encode("utf-8")) > _MAX_ARCHIVE_PATH_BYTES:
+        raise RuntimeError(f"unsafe archive path: {name}")
+    path = PurePosixPath(name)
+    parts = path.parts
+    if (
+        path.is_absolute()
+        or not parts
+        or len(parts) > _MAX_ARCHIVE_PATH_DEPTH
+        or any(part in {"", ".", ".."} for part in parts)
+    ):
+        raise RuntimeError(f"unsafe archive path: {name}")
+    return parts

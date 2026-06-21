@@ -7,12 +7,14 @@
 
 `mòine` is a Python and Rust library for romanization-aware string comparison.
 
-It implements [Lattice Path Edit Distance (Kaji, 2023)](https://aclanthology.org/2023.emnlp-industry.24/),
+It implements [Lattice Path Edit Distance (LPED; Kaji, 2023)](https://aclanthology.org/2023.emnlp-industry.24/),
 a distance metric that compares strings through possible reading paths rather
 than only through visible surface characters.
 
 This is useful when romanized input and written Japanese or Chinese look far
 apart as strings, but stay close in reading space.
+
+With the package installed and language artifacts downloaded:
 
 ```python
 >>> import moine
@@ -49,25 +51,11 @@ ambiguity in input sequences.
   [CC-CEDICT](https://cc-cedict.org/wiki/)-derived no-tone pinyin artifacts.
 - Plain string Levenshtein-compatible distance helpers.
 - Lattice-aware Damerau-Levenshtein distance for adjacent transpositions.
-- Combined `min(surface Damerau-Levenshtein, LPED)` scorer for paper-style
+- Combined `min(surface Damerau-Levenshtein, LPED)` scorer for candidate
   reranking.
 - Normalized similarity / `ratio` helpers in `0.0..=1.0`.
 - [RapidFuzz](https://github.com/rapidfuzz/RapidFuzz)-inspired APIs such as
   `cdist` and partial matching helpers.
-
-## When To Use
-
-mòine is best used after another system has produced candidates: lexical
-retrieval, n-gram search, BM25, embeddings, a product catalog, or an entity
-list. Use mòine to rescore those candidates in reading space.
-
-| Good fit | Poor fit |
-| --- | --- |
-| Romanized, kana, kanji, or pinyin input mixed together | Same-script typo matching only |
-| Query correction, search suggest, and candidate reranking | Replacing a full search engine |
-| Japanese and Mandarin pinyin Chinese entity matching | Cantonese/Jyutping or arbitrary languages |
-| Pipelines that can download dictionary artifacts explicitly | Install-only workflows with no data step |
-| Hundreds or thousands of candidates after retrieval | Brute-force scoring over a whole corpus |
 
 ## Installation
 
@@ -276,7 +264,7 @@ loads:
 - Chinese support is Mandarin pinyin only; it does not model Cantonese/Jyutping
   or non-Mandarin readings.
 - `processor`, `score_hint`, NumPy dtype options, and worker parallelism are not
-  part of the initial `cdist` API.
+  part of the current `cdist` API.
 
 ## Reference
 

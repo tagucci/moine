@@ -4,7 +4,16 @@ from pathlib import Path
 
 import moine
 import pytest
-from moine._artifacts import ARTIFACT_SPECS, _extract_archive, cli_main
+from moine._artifacts import (
+    _MAX_ARCHIVE_ENTRIES,
+    _MAX_CHECKSUM_MANIFEST_BYTES,
+    _MAX_DOWNLOAD_BYTES,
+    ARTIFACT_SPECS,
+    _copy_uri_to_path,
+    _extract_archive,
+    _read_uri_text,
+    cli_main,
+)
 
 
 def push_len_prefixed(data, tag, value):
@@ -83,9 +92,9 @@ license:
     )
 
 
-def write_archive(tmp_path: Path) -> Path:
+def write_archive(tmp_path: Path, *, insatsu_reading: str = "インサツ") -> Path:
     bundle_dir = tmp_path / "bundle" / "moine-unidic-cwj-202512-test"
-    write_ja_bundle(bundle_dir)
+    write_ja_bundle(bundle_dir, insatsu_reading=insatsu_reading)
     archive = tmp_path / "moine-unidic-cwj-202512-test.tar.gz"
     with tarfile.open(archive, "w:gz") as tar:
         tar.add(bundle_dir, arcname=bundle_dir.name)
@@ -161,6 +170,112 @@ def test_download_list_where_and_default_cache_lookup(tmp_path, monkeypatch, cap
     finally:
         moine.clear_default_dictionary(lang="ja")
         moine.clear_default_dictionary(lang="ja-unidic")
+
+
+def test_download_revalidates_existing_cache_without_force(tmp_path, capsys):
+    cache_dir = tmp_path / "cache"
+    archive = write_archive(tmp_path / "archive")
+
+    assert (
+        cli_main(
+            [
+                "download",
+                "ja",
+                "--url",
+                str(archive),
+                "--cache-dir",
+                str(cache_dir),
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+    installed = cache_dir / "moine-unidic-cwj-202512-test"
+    metadata = installed / "metadata.yaml"
+    metadata.write_text(
+        metadata.read_text(encoding="utf-8").replace(
+            "artifact_type: moine.unidic.reading-index",
+            "artifact_type: moine.zh.reading-index",
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="unsupported Japanese artifact type"):
+        cli_main(
+            [
+                "download",
+                "ja",
+                "--url",
+                str(archive),
+                "--cache-dir",
+                str(cache_dir),
+            ]
+        )
+
+
+def test_force_download_replaces_existing_cache(tmp_path, capsys):
+    cache_dir = tmp_path / "cache"
+    first_archive = write_archive(tmp_path / "first", insatsu_reading="インサツ")
+    second_archive = write_archive(tmp_path / "second", insatsu_reading="アウト")
+
+    assert (
+        cli_main(
+            [
+                "download",
+                "ja",
+                "--url",
+                str(first_archive),
+                "--cache-dir",
+                str(cache_dir),
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+
+    assert (
+        cli_main(
+            [
+                "download",
+                "ja",
+                "--url",
+                str(second_archive),
+                "--cache-dir",
+                str(cache_dir),
+                "--force",
+            ]
+        )
+        == 0
+    )
+    installed = cache_dir / "moine-unidic-cwj-202512-test"
+    assert capsys.readouterr().out.strip() == str(installed)
+    assert "アウト" in installed.joinpath("readings.yaml").read_text(encoding="utf-8")
+
+
+def test_force_download_replaces_existing_cache_file(tmp_path, capsys):
+    cache_dir = tmp_path / "cache"
+    archive = write_archive(tmp_path / "archive", insatsu_reading="アウト")
+    cache_dir.mkdir()
+    installed = cache_dir / "moine-unidic-cwj-202512-test"
+    installed.write_text("stale", encoding="utf-8")
+
+    assert (
+        cli_main(
+            [
+                "download",
+                "ja",
+                "--url",
+                str(archive),
+                "--cache-dir",
+                str(cache_dir),
+                "--force",
+            ]
+        )
+        == 0
+    )
+    assert capsys.readouterr().out.strip() == str(installed)
+    assert installed.is_dir()
+    assert "アウト" in installed.joinpath("readings.yaml").read_text(encoding="utf-8")
 
 
 def test_sudachi_download_where_and_cache_lookup(tmp_path, monkeypatch, capsys):
@@ -313,6 +428,42 @@ def test_extract_archive_rejects_links(tmp_path):
 
     with pytest.raises(RuntimeError, match="unsupported archive entry type"):
         _extract_archive(archive, tmp_path / "extract")
+
+
+def test_extract_archive_rejects_too_many_entries(tmp_path):
+    archive = tmp_path / "too-many.tar.gz"
+    with tarfile.open(archive, "w:gz") as tar:
+        for index in range(_MAX_ARCHIVE_ENTRIES + 1):
+            entry = tarfile.TarInfo(f"bundle/dir-{index}")
+            entry.type = tarfile.DIRTYPE
+            tar.addfile(entry)
+
+    with pytest.raises(RuntimeError, match="archive entry count"):
+        _extract_archive(archive, tmp_path / "extract")
+
+
+def test_local_download_copy_rejects_oversized_files(tmp_path):
+    source = tmp_path / "oversized.tar.gz"
+    with source.open("wb") as file:
+        file.truncate(_MAX_DOWNLOAD_BYTES + 1)
+
+    with pytest.raises(RuntimeError, match="download exceeded"):
+        _copy_uri_to_path(str(source), tmp_path / "plain.tar.gz")
+
+    with pytest.raises(RuntimeError, match="download exceeded"):
+        _copy_uri_to_path(source.as_uri(), tmp_path / "uri.tar.gz")
+
+
+def test_local_checksum_manifest_rejects_oversized_files(tmp_path):
+    source = tmp_path / "SHA256SUMS"
+    with source.open("wb") as file:
+        file.truncate(_MAX_CHECKSUM_MANIFEST_BYTES + 1)
+
+    with pytest.raises(RuntimeError, match="checksum manifest exceeded"):
+        _read_uri_text(str(source))
+
+    with pytest.raises(RuntimeError, match="checksum manifest exceeded"):
+        _read_uri_text(source.as_uri())
 
 
 def test_default_artifact_specs_point_to_current_releases():
