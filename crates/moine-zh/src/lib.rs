@@ -52,7 +52,6 @@ use std::string::FromUtf8Error;
 use std::sync::Arc;
 
 use fst::{Map, MapBuilder, Streamer};
-use memmap2::Mmap;
 use moine_core::{
     levenshtein_str, normalized_similarity_str, try_damerau_distance, try_damerau_levenshtein_str,
     try_distance, DistanceError, Lattice,
@@ -236,7 +235,7 @@ impl Eq for CedictReadingIndex {}
 
 #[derive(Clone, Debug)]
 struct IndexedZhPayload {
-    mmap: Arc<Mmap>,
+    bytes: Arc<[u8]>,
     map: Map<Vec<u8>>,
     readings_start: usize,
     entries: usize,
@@ -948,28 +947,24 @@ impl CedictReadingIndex {
         })
     }
 
-    /// Loads an indexed artifact payload from a file path using mmap-backed
-    /// storage.
+    /// Loads an indexed artifact payload from a file path.
     ///
-    /// The file is validated before the index is returned, but readings remain
-    /// lazy and are decoded from the indexed payload during lookup.
+    /// The payload is copied into owned immutable bytes before the index is
+    /// returned, so later changes to the source file cannot affect lookups.
+    /// Readings remain lazy and are decoded during lookup.
     pub fn from_indexed_artifact_payload_path(
         path: impl AsRef<Path>,
     ) -> Result<Self, ZhArtifactPayloadError> {
         let path = path.as_ref();
-        check_payload_file_size(path)?;
-        let file = File::open(path)?;
-        // SAFETY: the mmap is kept alive by IndexedZhPayload for as long as
-        // any offsets or slices derived from it can be used.
-        let mmap = unsafe { Mmap::map(&file)? };
-        Self::from_indexed_mmap(mmap)
+        let bytes = read_payload_file_bounded(path)?;
+        Self::from_indexed_owned_bytes(bytes)
     }
 
     /// Loads an indexed artifact payload from bytes.
     ///
-    /// This eagerly materializes the indexed payload and is intended for
-    /// environments such as WebAssembly where mmap-backed loading is not
-    /// available.
+    /// The payload is copied into owned immutable bytes and decoded lazily
+    /// during lookup. This is intended for environments such as WebAssembly
+    /// where file-path loading is not available.
     ///
     /// # Errors
     ///
@@ -985,7 +980,19 @@ impl CedictReadingIndex {
                 max: MAX_ARTIFACT_PAYLOAD_BYTES,
             });
         }
-        let header = read_indexed_artifact_payload_header_bytes(bytes)?;
+        Self::from_indexed_owned_bytes(bytes.to_vec())
+    }
+
+    fn from_indexed_owned_bytes(bytes: Vec<u8>) -> Result<Self, ZhArtifactPayloadError> {
+        let bytes: Arc<[u8]> = Arc::from(bytes);
+        if bytes.len() as u64 > MAX_ARTIFACT_PAYLOAD_BYTES {
+            return Err(ZhArtifactPayloadError::ArtifactLimitExceeded {
+                field: "payload_bytes",
+                len: bytes.len() as u64,
+                max: MAX_ARTIFACT_PAYLOAD_BYTES,
+            });
+        }
+        let header = read_indexed_artifact_payload_header_bytes(bytes.as_ref())?;
         let fst_start = INDEXED_ARTIFACT_HEADER_LEN;
         let fst_end = fst_start.checked_add(header.fst_len).ok_or(
             ZhArtifactPayloadError::TruncatedIndexed {
@@ -1015,68 +1022,8 @@ impl CedictReadingIndex {
                 fst_entries,
             });
         }
-
-        let mut entries = Vec::with_capacity(header.entries);
-        let mut stream = map.stream();
-        while let Some((surface, offset)) = stream.next() {
-            let surface = String::from_utf8(surface.to_vec()).map_err(|source| {
-                ZhArtifactPayloadError::InvalidIndexedUtf8 {
-                    field: "surface",
-                    source,
-                }
-            })?;
-            let readings = read_indexed_readings_at_bytes(bytes, fst_end, offset)?;
-            entries.push(ZhReadingIndexPayloadEntry { surface, readings });
-        }
-
-        Self::from_artifact_payload(ZhReadingIndexPayload {
-            schema_version: ARTIFACT_PAYLOAD_SCHEMA_VERSION,
-            payload_type: ARTIFACT_PAYLOAD_TYPE.to_string(),
-            pinyin_view: header.pinyin_view.as_str().to_string(),
-            entries,
-        })
-    }
-
-    fn from_indexed_mmap(mmap: Mmap) -> Result<Self, ZhArtifactPayloadError> {
-        if mmap.len() as u64 > MAX_ARTIFACT_PAYLOAD_BYTES {
-            return Err(ZhArtifactPayloadError::ArtifactLimitExceeded {
-                field: "payload_bytes",
-                len: mmap.len() as u64,
-                max: MAX_ARTIFACT_PAYLOAD_BYTES,
-            });
-        }
-        let header = read_indexed_artifact_payload_header_bytes(&mmap)?;
-        let fst_start = INDEXED_ARTIFACT_HEADER_LEN;
-        let fst_end = fst_start.checked_add(header.fst_len).ok_or(
-            ZhArtifactPayloadError::TruncatedIndexed {
-                field: "fst_section",
-            },
-        )?;
-        let readings_end = fst_end.checked_add(header.readings_len).ok_or(
-            ZhArtifactPayloadError::TruncatedIndexed {
-                field: "readings_section",
-            },
-        )?;
-        if mmap.len() < readings_end {
-            return Err(ZhArtifactPayloadError::TruncatedIndexed {
-                field: "indexed_payload",
-            });
-        }
-
-        let map = Map::new(mmap[fst_start..fst_end].to_vec()).map_err(|err| {
-            ZhArtifactPayloadError::InvalidIndexedFst {
-                message: err.to_string(),
-            }
-        })?;
-        let fst_entries = map.len();
-        if fst_entries != header.entries {
-            return Err(ZhArtifactPayloadError::IndexedEntryCountMismatch {
-                header_entries: header.entries,
-                fst_entries,
-            });
-        }
         let indexed = IndexedZhPayload {
-            mmap: Arc::new(mmap),
+            bytes,
             map,
             readings_start: fst_end,
             entries: header.entries,
@@ -1834,6 +1781,50 @@ fn check_payload_file_size(path: &Path) -> Result<(), ZhArtifactPayloadError> {
     Ok(())
 }
 
+fn read_payload_file_bounded(path: &Path) -> Result<Vec<u8>, ZhArtifactPayloadError> {
+    let metadata = std::fs::metadata(path)?;
+    if !metadata.file_type().is_file() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "artifact payload path is not a regular file",
+        )
+        .into());
+    }
+    if metadata.len() > MAX_ARTIFACT_PAYLOAD_BYTES {
+        return Err(ZhArtifactPayloadError::ArtifactLimitExceeded {
+            field: "payload_bytes",
+            len: metadata.len(),
+            max: MAX_ARTIFACT_PAYLOAD_BYTES,
+        });
+    }
+    let file = File::open(path)?;
+    read_payload_reader_bounded(file, MAX_ARTIFACT_PAYLOAD_BYTES)
+}
+
+fn read_payload_reader_bounded(
+    reader: impl Read,
+    max: u64,
+) -> Result<Vec<u8>, ZhArtifactPayloadError> {
+    let mut reader = reader.take(max.saturating_add(1));
+    let mut bytes = Vec::new();
+    let mut chunk = [0_u8; 8192];
+    loop {
+        let len = reader.read(&mut chunk)?;
+        if len == 0 {
+            return Ok(bytes);
+        }
+        let next_len = bytes.len() as u64 + len as u64;
+        if next_len > max {
+            return Err(ZhArtifactPayloadError::ArtifactLimitExceeded {
+                field: "payload_bytes",
+                len: next_len,
+                max,
+            });
+        }
+        bytes.extend_from_slice(&chunk[..len]);
+    }
+}
+
 fn check_limit(field: &'static str, len: usize, max: usize) -> Result<(), ZhArtifactPayloadError> {
     if len > max {
         return Err(ZhArtifactPayloadError::ArtifactLimitExceeded {
@@ -1869,6 +1860,7 @@ impl IndexedZhPayload {
             if surface.is_empty() {
                 return Err(ZhArtifactPayloadError::EmptySurface { entry_index: 0 });
             }
+            check_limit("surface_bytes", surface.len(), MAX_ARTIFACT_STRING_BYTES)?;
             let readings = self.readings_at(offset)?;
             if readings.is_empty() {
                 return Err(ZhArtifactPayloadError::EmptyReadings { surface });
@@ -1924,7 +1916,7 @@ impl IndexedZhPayload {
     }
 
     fn readings_at(&self, offset: u64) -> Result<Vec<String>, ZhArtifactPayloadError> {
-        read_indexed_readings_at_bytes(&self.mmap, self.readings_start, offset)
+        read_indexed_readings_at_bytes(self.bytes.as_ref(), self.readings_start, offset)
     }
 }
 
@@ -2111,6 +2103,57 @@ fn take_token(input: &str) -> Option<(&str, &str)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn indexed_payload_with_surface(
+        surface: &str,
+        readings: &[String],
+    ) -> Result<Vec<u8>, ZhArtifactPayloadError> {
+        let mut fst_bytes = Vec::new();
+        let mut readings_bytes = Vec::new();
+        {
+            let mut builder = MapBuilder::new(&mut fst_bytes).map_err(|err| {
+                ZhArtifactPayloadError::InvalidIndexedFst {
+                    message: err.to_string(),
+                }
+            })?;
+            builder.insert(surface, 0).map_err(|err| {
+                ZhArtifactPayloadError::InvalidIndexedFst {
+                    message: err.to_string(),
+                }
+            })?;
+            builder
+                .finish()
+                .map_err(|err| ZhArtifactPayloadError::InvalidIndexedFst {
+                    message: err.to_string(),
+                })?;
+        }
+        write_indexed_reading_block(&mut readings_bytes, readings)?;
+
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(INDEXED_ARTIFACT_MAGIC);
+        bytes.extend_from_slice(&INDEXED_ARTIFACT_VERSION.to_le_bytes());
+        bytes.extend_from_slice(&pinyin_view_header_value(PinyinView::NoTone).to_le_bytes());
+        bytes.extend_from_slice(&1_u64.to_le_bytes());
+        bytes.extend_from_slice(&(fst_bytes.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(&(readings_bytes.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(&fst_bytes);
+        bytes.extend_from_slice(&readings_bytes);
+        Ok(bytes)
+    }
+
+    #[test]
+    fn bounded_payload_reader_rejects_data_past_limit() {
+        let err = read_payload_reader_bounded(std::io::Cursor::new([0_u8; 4]), 3).unwrap_err();
+
+        assert!(matches!(
+            err,
+            ZhArtifactPayloadError::ArtifactLimitExceeded {
+                field: "payload_bytes",
+                len: 4,
+                max: 3
+            }
+        ));
+    }
 
     #[test]
     fn normalizes_pinyin_views() {
@@ -2386,6 +2429,11 @@ mod tests {
         ));
         std::fs::write(&path, &bytes).unwrap();
         let loaded = ZhReadingIndex::from_indexed_artifact_payload_path(&path).unwrap();
+        std::fs::write(&path, b"truncated after load").unwrap();
+        assert_eq!(
+            loaded.readings("威士忌").as_deref(),
+            Some(&["weishiji".to_string()][..])
+        );
         std::fs::remove_file(&path).unwrap();
         let loaded_from_bytes = ZhReadingIndex::from_indexed_artifact_payload_bytes(&bytes)
             .expect("indexed payload bytes should load");
@@ -2483,6 +2531,25 @@ mod tests {
             err,
             ZhArtifactPayloadError::ArtifactLimitExceeded {
                 field: "reading_count",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn rejects_indexed_artifact_payload_excessive_surface_bytes() {
+        let bytes = indexed_payload_with_surface(
+            &"威".repeat(MAX_ARTIFACT_STRING_BYTES + 1),
+            &["wei".to_string()],
+        )
+        .unwrap();
+
+        let err = ZhReadingIndex::from_indexed_artifact_payload_bytes(&bytes).unwrap_err();
+
+        assert!(matches!(
+            err,
+            ZhArtifactPayloadError::ArtifactLimitExceeded {
+                field: "surface_bytes",
                 ..
             }
         ));

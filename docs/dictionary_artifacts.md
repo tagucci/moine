@@ -259,7 +259,8 @@ cargo run -q -p moine-cli -- unidic-artifact-binary-inspect \
 The indexed UniDic payload is an experimental v1 format for reducing runtime
 dictionary load cost without changing the logical `surface -> readings`
 payload identity. It stores a FST surface index plus offset-addressed reading
-blocks in one mmap-backed file:
+blocks in one contiguous indexed file. Runtime path loaders copy this payload
+into owned immutable bytes before serving lazy lookups:
 
 ```text
 magic           8 bytes   "MOINEI01"
@@ -287,14 +288,12 @@ cargo run -q -p moine-cli -- unidic-artifact-bundle \
   --output-dir dist/moine-unidic-cwj-202512
 ```
 
-The current loader maps the file, copies the FST bytes into the `fst` runtime
-map, and lazily decodes reading blocks by offset during lookup. It still
-validates the indexed payload on load and still supports the same canonical
-logical payload checksum. In the local full-UniDic measurement, this reduced
-dictionary load time from about `3.95s` for the eager binary
-payload to about `1.91s` for the indexed payload. Per-call comparison was
-slightly slower because readings are decoded lazily at lookup time instead of
-being pre-materialized in a `HashMap`.
+The current path and bytes loaders copy the indexed payload into owned
+immutable bytes, copy the FST bytes into the `fst` runtime map, and lazily
+decode reading blocks by offset during lookup. They still validate the indexed
+payload on load and still support the same canonical logical payload checksum.
+Re-run the runtime measurement command later in this document after loader
+changes before publishing load-time numbers for a release.
 
 ## Chinese Pinyin Payload
 
@@ -775,13 +774,12 @@ compare average:         0.148-0.151 ms
 process total:           2.10-2.56 s real
 ```
 
-Python `Dictionary.load_bundle(...)` measured against the same bundle loaded in
-1916.976 ms and then averaged 0.149 ms per `distance(...)` call over the same
-five pairs. Later full-UniDic indexed FST measurement reduced load time from
-about 3.95 s to about 1.91 s on the same local validation workload, with a
-small per-call slowdown from lazy reading-block decode. This makes the indexed
-payload worth carrying into the first public artifact while keeping the eager
-binary payload as a simpler fallback.
+Treat these figures as a historical binary-payload example, not a current
+indexed-loader benchmark. Re-run `unidic-artifact-runtime-measure` against the
+current indexed loader before publishing load-time comparisons for a release.
+The indexed payload remains the preferred runtime artifact shape because it
+keeps the logical `surface -> readings` payload checksum stable while allowing
+lazy reading-block decode.
 
 Generated payloads can also be used directly by the diagnostic `compare` CLI:
 

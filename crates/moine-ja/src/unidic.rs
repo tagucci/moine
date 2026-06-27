@@ -10,7 +10,6 @@ use std::string::FromUtf8Error;
 use std::sync::Arc;
 
 use fst::{Map, MapBuilder, Streamer};
-use memmap2::Mmap;
 use moine_core::Lattice;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -79,7 +78,7 @@ impl Eq for UnidicReadingIndex {}
 
 #[derive(Clone, Debug)]
 struct IndexedUnidicPayload {
-    mmap: Arc<Mmap>,
+    bytes: Arc<[u8]>,
     map: Map<Vec<u8>>,
     readings_start: usize,
     entries: usize,
@@ -992,23 +991,22 @@ impl UnidicReadingIndex {
     }
 
     /// Loads an indexed FST artifact payload from a file path.
+    ///
+    /// The payload is copied into owned immutable bytes before the index is
+    /// returned, so later changes to the source file cannot affect lookups.
     pub fn from_indexed_artifact_payload_path(
         path: impl AsRef<Path>,
     ) -> Result<Self, UnidicArtifactPayloadError> {
         let path = path.as_ref();
-        check_payload_file_size(path)?;
-        let file = File::open(path)?;
-        // SAFETY: the mmap is kept alive by IndexedUnidicPayload for as long as
-        // any offsets or slices derived from it can be used.
-        let mmap = unsafe { Mmap::map(&file)? };
-        Self::from_indexed_mmap(mmap)
+        let bytes = read_payload_file_bounded(path)?;
+        Self::from_indexed_owned_bytes(bytes)
     }
 
     /// Loads an indexed artifact payload from bytes.
     ///
-    /// This eagerly materializes the indexed payload and is intended for
-    /// environments such as WebAssembly where mmap-backed loading is not
-    /// available.
+    /// The payload is copied into owned immutable bytes and decoded lazily
+    /// during lookup. This is intended for environments such as WebAssembly
+    /// where file-path loading is not available.
     ///
     /// # Errors
     ///
@@ -1024,7 +1022,19 @@ impl UnidicReadingIndex {
                 max: MAX_ARTIFACT_PAYLOAD_BYTES,
             });
         }
-        let header = read_indexed_artifact_payload_header_bytes(bytes)?;
+        Self::from_indexed_owned_bytes(bytes.to_vec())
+    }
+
+    fn from_indexed_owned_bytes(bytes: Vec<u8>) -> Result<Self, UnidicArtifactPayloadError> {
+        let bytes: Arc<[u8]> = Arc::from(bytes);
+        if bytes.len() as u64 > MAX_ARTIFACT_PAYLOAD_BYTES {
+            return Err(UnidicArtifactPayloadError::ArtifactLimitExceeded {
+                field: "payload_bytes",
+                len: bytes.len() as u64,
+                max: MAX_ARTIFACT_PAYLOAD_BYTES,
+            });
+        }
+        let header = read_indexed_artifact_payload_header_bytes(bytes.as_ref())?;
         let fst_start = INDEXED_ARTIFACT_HEADER_LEN;
         let fst_end = fst_start.checked_add(header.fst_len).ok_or(
             UnidicArtifactPayloadError::TruncatedIndexed {
@@ -1055,67 +1065,8 @@ impl UnidicReadingIndex {
             });
         }
 
-        let mut entries = Vec::with_capacity(header.entries);
-        let mut stream = map.stream();
-        while let Some((surface, offset)) = stream.next() {
-            let surface = std::str::from_utf8(surface)
-                .map_err(|source| UnidicArtifactPayloadError::InvalidIndexedUtf8 {
-                    field: "surface",
-                    source,
-                })?
-                .to_string();
-            let readings = read_indexed_readings_at_bytes(bytes, fst_end, offset)?;
-            entries.push(UnidicReadingIndexPayloadEntry { surface, readings });
-        }
-
-        Self::from_artifact_payload(UnidicReadingIndexPayload {
-            schema_version: ARTIFACT_PAYLOAD_SCHEMA_VERSION,
-            payload_type: ARTIFACT_PAYLOAD_TYPE.to_string(),
-            entries,
-        })
-    }
-
-    fn from_indexed_mmap(mmap: Mmap) -> Result<Self, UnidicArtifactPayloadError> {
-        if mmap.len() as u64 > MAX_ARTIFACT_PAYLOAD_BYTES {
-            return Err(UnidicArtifactPayloadError::ArtifactLimitExceeded {
-                field: "payload_bytes",
-                len: mmap.len() as u64,
-                max: MAX_ARTIFACT_PAYLOAD_BYTES,
-            });
-        }
-        let header = read_indexed_artifact_payload_header_bytes(&mmap)?;
-        let fst_start = INDEXED_ARTIFACT_HEADER_LEN;
-        let fst_end = fst_start.checked_add(header.fst_len).ok_or(
-            UnidicArtifactPayloadError::TruncatedIndexed {
-                field: "fst_section",
-            },
-        )?;
-        let readings_end = fst_end.checked_add(header.readings_len).ok_or(
-            UnidicArtifactPayloadError::TruncatedIndexed {
-                field: "readings_section",
-            },
-        )?;
-        if mmap.len() < readings_end {
-            return Err(UnidicArtifactPayloadError::TruncatedIndexed {
-                field: "indexed_payload",
-            });
-        }
-
-        let map = Map::new(mmap[fst_start..fst_end].to_vec()).map_err(|err| {
-            UnidicArtifactPayloadError::InvalidIndexedFst {
-                message: err.to_string(),
-            }
-        })?;
-        let fst_entries = map.len();
-        if fst_entries != header.entries {
-            return Err(UnidicArtifactPayloadError::IndexedEntryCountMismatch {
-                header_entries: header.entries,
-                fst_entries,
-            });
-        }
-
         let indexed = IndexedUnidicPayload {
-            mmap: Arc::new(mmap),
+            bytes,
             map,
             readings_start: fst_end,
             entries: header.entries,
@@ -2113,6 +2064,50 @@ fn check_payload_file_size(path: &Path) -> Result<(), UnidicArtifactPayloadError
     Ok(())
 }
 
+fn read_payload_file_bounded(path: &Path) -> Result<Vec<u8>, UnidicArtifactPayloadError> {
+    let metadata = std::fs::metadata(path)?;
+    if !metadata.file_type().is_file() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "artifact payload path is not a regular file",
+        )
+        .into());
+    }
+    if metadata.len() > MAX_ARTIFACT_PAYLOAD_BYTES {
+        return Err(UnidicArtifactPayloadError::ArtifactLimitExceeded {
+            field: "payload_bytes",
+            len: metadata.len(),
+            max: MAX_ARTIFACT_PAYLOAD_BYTES,
+        });
+    }
+    let file = File::open(path)?;
+    read_payload_reader_bounded(file, MAX_ARTIFACT_PAYLOAD_BYTES)
+}
+
+fn read_payload_reader_bounded(
+    reader: impl Read,
+    max: u64,
+) -> Result<Vec<u8>, UnidicArtifactPayloadError> {
+    let mut reader = reader.take(max.saturating_add(1));
+    let mut bytes = Vec::new();
+    let mut chunk = [0_u8; 8192];
+    loop {
+        let len = reader.read(&mut chunk)?;
+        if len == 0 {
+            return Ok(bytes);
+        }
+        let next_len = bytes.len() as u64 + len as u64;
+        if next_len > max {
+            return Err(UnidicArtifactPayloadError::ArtifactLimitExceeded {
+                field: "payload_bytes",
+                len: next_len,
+                max,
+            });
+        }
+        bytes.extend_from_slice(&chunk[..len]);
+    }
+}
+
 fn check_limit(
     field: &'static str,
     len: usize,
@@ -2152,6 +2147,7 @@ impl IndexedUnidicPayload {
             if surface.is_empty() {
                 return Err(UnidicArtifactPayloadError::EmptySurface { entry_index: 0 });
             }
+            check_limit("surface_bytes", surface.len(), MAX_ARTIFACT_STRING_BYTES)?;
             let readings = self.readings_at(offset)?;
             if readings.is_empty() {
                 return Err(UnidicArtifactPayloadError::EmptyReadings {
@@ -2201,7 +2197,7 @@ impl IndexedUnidicPayload {
     }
 
     fn readings_at(&self, offset: u64) -> Result<Vec<String>, UnidicArtifactPayloadError> {
-        read_indexed_readings_at_bytes(&self.mmap, self.readings_start, offset)
+        read_indexed_readings_at_bytes(self.bytes.as_ref(), self.readings_start, offset)
     }
 }
 
@@ -2334,6 +2330,57 @@ fn sha256_digest_hex(digest: impl IntoIterator<Item = u8>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn indexed_payload_with_surface(
+        surface: &str,
+        readings: &[String],
+    ) -> Result<Vec<u8>, UnidicArtifactPayloadError> {
+        let mut fst_bytes = Vec::new();
+        let mut readings_bytes = Vec::new();
+        {
+            let mut builder = MapBuilder::new(&mut fst_bytes).map_err(|err| {
+                UnidicArtifactPayloadError::InvalidIndexedFst {
+                    message: err.to_string(),
+                }
+            })?;
+            builder.insert(surface, 0).map_err(|err| {
+                UnidicArtifactPayloadError::InvalidIndexedFst {
+                    message: err.to_string(),
+                }
+            })?;
+            builder
+                .finish()
+                .map_err(|err| UnidicArtifactPayloadError::InvalidIndexedFst {
+                    message: err.to_string(),
+                })?;
+        }
+        write_indexed_reading_block(&mut readings_bytes, readings)?;
+
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(INDEXED_ARTIFACT_MAGIC);
+        bytes.extend_from_slice(&INDEXED_ARTIFACT_VERSION.to_le_bytes());
+        bytes.extend_from_slice(&0_u32.to_le_bytes());
+        bytes.extend_from_slice(&1_u64.to_le_bytes());
+        bytes.extend_from_slice(&(fst_bytes.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(&(readings_bytes.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(&fst_bytes);
+        bytes.extend_from_slice(&readings_bytes);
+        Ok(bytes)
+    }
+
+    #[test]
+    fn bounded_payload_reader_rejects_data_past_limit() {
+        let err = read_payload_reader_bounded(std::io::Cursor::new([0_u8; 4]), 3).unwrap_err();
+
+        assert!(matches!(
+            err,
+            UnidicArtifactPayloadError::ArtifactLimitExceeded {
+                field: "payload_bytes",
+                len: 4,
+                max: 3
+            }
+        ));
+    }
 
     #[test]
     fn builds_surface_to_readings_index() {
@@ -2646,6 +2693,11 @@ entries:
         std::fs::write(&path, &bytes).unwrap();
         let loaded = UnidicReadingIndex::from_indexed_artifact_payload_path(&path)
             .expect("indexed payload should load");
+        std::fs::write(&path, b"truncated after load").unwrap();
+        assert_eq!(
+            loaded.readings("印刷").as_deref(),
+            Some(&["インサツ".to_string()][..])
+        );
         let _ = std::fs::remove_file(&path);
         let loaded_from_bytes = UnidicReadingIndex::from_indexed_artifact_payload_bytes(&bytes)
             .expect("indexed payload bytes should load");
@@ -2910,6 +2962,25 @@ entries:
             err,
             UnidicArtifactPayloadError::ArtifactLimitExceeded {
                 field: "reading_count",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn rejects_indexed_artifact_payload_excessive_surface_bytes() {
+        let bytes = indexed_payload_with_surface(
+            &"刃".repeat(MAX_ARTIFACT_STRING_BYTES + 1),
+            &["ハ".to_string()],
+        )
+        .unwrap();
+
+        let err = UnidicReadingIndex::from_indexed_artifact_payload_bytes(&bytes).unwrap_err();
+
+        assert!(matches!(
+            err,
+            UnidicArtifactPayloadError::ArtifactLimitExceeded {
+                field: "surface_bytes",
                 ..
             }
         ));
