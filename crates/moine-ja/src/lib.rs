@@ -35,7 +35,10 @@ pub use distance::{
 };
 pub use kana::{is_kana, normalize_kana, normalize_kana_char};
 pub use overrides::{OverrideDictionary, OverrideLoadError};
-pub use romaji::{romaji_lattice, romaji_paths, JaLatticeError, RomajiVariantTable};
+pub use romaji::{
+    romaji_lattice, romaji_paths, romaji_paths_with_limits, JaLatticeError, RomajiExpansionLimit,
+    RomajiExpansionLimits, RomajiVariantTable,
+};
 pub use sudachi::SudachiIndexOptions;
 pub use unidic::{
     artifact_file_digest_path, artifact_file_digest_reader, romaji_lattice_from_reading_paths,

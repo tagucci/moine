@@ -35,8 +35,8 @@ especially when surface forms differ but reading paths stay close.
 
 ## Benchmark
 
-Recorded on 2026-06-20. The first table reports scoring time only; dictionary
-loading is shown separately below.
+The scoring table was recorded on 2026-06-28. It reports scoring time only;
+dictionary loading is shown separately below.
 
 !!! important
 
@@ -58,16 +58,16 @@ the recorded table lives in the
 | Method | mean (±std) | relative |
 |---|---:|---:|
 | RapidFuzz Levenshtein | 0.15 ± 0.01 us/call | 1.00x |
-| mòine ja distance | 58.38 ± 109.10 us/call | 390x |
+| mòine ja distance | 26.08 ± 33.82 us/call | 177x |
 
-Fresh dictionary loads from the standard installed artifacts, measured over 100
-loads:
+Fresh dictionary loads from the standard installed artifacts, recorded on
+2026-06-28 and measured over 100 loads:
 
 | Dictionary | mean (±std) |
 |---|---:|
-| UniDic-CWJ | 475.23 ms ± 22.41 ms |
-| SudachiDict-full | 1959.09 ms ± 43.83 ms |
-| CC-CEDICT | 168.82 ms ± 12.47 ms |
+| UniDic-CWJ | 476.82 ms ± 14.09 ms |
+| SudachiDict-full | 2002.83 ms ± 42.17 ms |
+| CC-CEDICT | 176.68 ms ± 30.45 ms |
 
 ## Name
 

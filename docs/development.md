@@ -73,7 +73,8 @@ WHEEL=$(ls "$WHEEL_DIR"/moine-*.whl)
 uv run --python "$PYTHON" --no-project --with rapidfuzz --with "$WHEEL" \
   python scripts/benchmark_distances.py \
   --dictionary dist/moine-unidic-cwj-202512/metadata.yaml \
-  --loops 10000
+  --loops 10000 \
+  --dictionary-load-repeats 100
 ```
 
 Use Python 3.14 for comparable local speed numbers. The benchmark keeps
@@ -81,9 +82,9 @@ dictionary loading outside the timed loop, reports that load time separately,
 and compares RapidFuzz surface Levenshtein with the configured moine Japanese
 dictionary metric. The `mean ± std` timing is computed from pair-level
 microseconds per call across the curated 10-pair smoke corpus. Dictionary
-loading is timed separately as 10 fresh loads by default; pass
-`--dictionary-load-repeats` to adjust that count. Use `--score-cutoff` to
-measure the cutoff scoring path separately.
+loading is timed separately as 100 fresh loads in the command above; omit
+`--dictionary-load-repeats 100` to use the faster default of 10 loads. Use
+`--score-cutoff` to measure the cutoff scoring path separately.
 
 ## Japanese Diagnostics
 
