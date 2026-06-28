@@ -15,8 +15,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::romaji::{
-    can_build_direct_romaji_path, romaji_paths_from_segmented_readings,
-    romaji_symbol_paths_from_segmented_readings, JaLatticeError, RomajiSegmentMode,
+    can_build_direct_romaji_path, romaji_lattice_from_segmented_readings,
+    romaji_paths_from_segmented_readings, JaLatticeError, RomajiSegmentMode,
 };
 
 const SURFACE_COLUMN: usize = 0;
@@ -190,12 +190,11 @@ pub fn romaji_lattice_from_reading_paths(
         return Err(JaLatticeError::EmptyReadings);
     }
 
-    let paths = romaji_symbol_paths_from_segmented_readings(
+    romaji_lattice_from_segmented_readings(
         paths
             .iter()
             .map(|path| path.segments.iter().map(romaji_segment_input)),
-    )?;
-    Ok(Lattice::from_symbol_paths_compact(paths))
+    )
 }
 
 /// Expands dictionary reading paths into explicit romaji strings.

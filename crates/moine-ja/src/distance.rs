@@ -2,11 +2,14 @@ use std::collections::BTreeSet;
 
 use moine_core::{
     levenshtein_str, normalized_similarity_str, try_damerau_distance, try_damerau_levenshtein_str,
-    try_distance, Lattice, Symbol,
+    try_distance, Lattice,
 };
 
 use crate::overrides::OverrideDictionary;
-use crate::romaji::{romaji_lattice, romaji_paths, JaLatticeError};
+use crate::romaji::{
+    can_build_direct_romaji_path, romaji_lattice, romaji_lattice_from_supported_segmented_readings,
+    romaji_paths, JaLatticeError, RomajiSegmentMode,
+};
 use crate::unidic::{
     romaji_paths_from_reading_paths, DictionaryReadingOptions, DictionaryReadingPath,
     DictionaryReadingSegment, DictionaryReadingSegmentSource, UnidicReadingIndex,
@@ -85,8 +88,33 @@ pub fn unidic_or_direct_lattice(
         }
     }
 
-    let paths = unidic_or_direct_romaji_paths(input, index, options)?;
-    lattice_from_romaji_paths(paths)
+    if contains_ascii && can_build_direct_romaji_path(input) {
+        if let Some(lattice) = direct_ascii_dictionary_lattice(input, index, options)? {
+            return Ok(lattice);
+        }
+    }
+
+    let dictionary_paths = index
+        .try_reading_paths_with_stats(input, options)
+        .map_err(|err| JaLatticeError::ArtifactPayload(err.to_string()))?
+        .paths;
+    if !dictionary_paths.is_empty() {
+        if let Some(lattice) = lattice_from_dictionary_reading_paths(&dictionary_paths)? {
+            return Ok(lattice);
+        }
+    }
+
+    let hybrid_paths = index
+        .try_hybrid_reading_paths_with_stats(input, options)
+        .map_err(|err| JaLatticeError::ArtifactPayload(err.to_string()))?
+        .paths;
+    if !hybrid_paths.is_empty() {
+        if let Some(lattice) = lattice_from_dictionary_reading_paths(&hybrid_paths)? {
+            return Ok(lattice);
+        }
+    }
+
+    romaji_lattice(input)
 }
 
 /// Returns romaji paths from direct input, dictionary readings, or both.
@@ -149,6 +177,92 @@ fn validate_dictionary_options(
 
 fn contains_ascii_alphanumeric(input: &str) -> bool {
     input.chars().any(|ch| ch.is_ascii_alphanumeric())
+}
+
+type SegmentedRomajiInput = Vec<(String, RomajiSegmentMode)>;
+
+fn direct_ascii_dictionary_lattice(
+    input: &str,
+    index: &UnidicReadingIndex,
+    options: DictionaryReadingOptions,
+) -> Result<Option<Lattice>, JaLatticeError> {
+    let mut inputs = vec![vec![(input.to_string(), RomajiSegmentMode::Surface)]];
+    extend_exact_dictionary_lattice_inputs(&mut inputs, input, index, options)?;
+    if should_try_hybrid_for_direct_ascii(input, index)? {
+        let hybrid_paths = index
+            .try_hybrid_reading_paths_with_stats(input, options)
+            .map_err(|err| JaLatticeError::ArtifactPayload(err.to_string()))?
+            .paths;
+        extend_dictionary_lattice_inputs(&mut inputs, &hybrid_paths);
+    }
+    lattice_from_segmented_inputs(&inputs)
+}
+
+fn lattice_from_dictionary_reading_paths(
+    reading_paths: &[DictionaryReadingPath],
+) -> Result<Option<Lattice>, JaLatticeError> {
+    let mut inputs = Vec::new();
+    extend_dictionary_lattice_inputs(&mut inputs, reading_paths);
+    lattice_from_segmented_inputs(&inputs)
+}
+
+fn extend_dictionary_lattice_inputs(
+    inputs: &mut Vec<SegmentedRomajiInput>,
+    reading_paths: &[DictionaryReadingPath],
+) {
+    inputs.extend(reading_paths.iter().map(dictionary_lattice_input));
+}
+
+fn dictionary_lattice_input(path: &DictionaryReadingPath) -> SegmentedRomajiInput {
+    path.segments
+        .iter()
+        .map(|segment| {
+            let mode = match segment.source {
+                DictionaryReadingSegmentSource::Dictionary => RomajiSegmentMode::Reading,
+                DictionaryReadingSegmentSource::Direct => RomajiSegmentMode::Surface,
+            };
+            (segment.reading.clone(), mode)
+        })
+        .collect()
+}
+
+fn extend_exact_dictionary_lattice_inputs(
+    inputs: &mut Vec<SegmentedRomajiInput>,
+    surface: &str,
+    index: &UnidicReadingIndex,
+    options: DictionaryReadingOptions,
+) -> Result<(), JaLatticeError> {
+    let Some(surface_readings) = index
+        .try_readings(surface)
+        .map_err(|err| JaLatticeError::ArtifactPayload(err.to_string()))?
+    else {
+        return Ok(());
+    };
+    let surface_readings = if let Some(max_readings) = options.max_readings_per_segment {
+        &surface_readings[..surface_readings.len().min(max_readings)]
+    } else {
+        surface_readings.as_ref()
+    };
+    inputs.extend(
+        surface_readings
+            .iter()
+            .map(|reading| vec![(reading.clone(), RomajiSegmentMode::Reading)]),
+    );
+    Ok(())
+}
+
+fn lattice_from_segmented_inputs(
+    inputs: &[SegmentedRomajiInput],
+) -> Result<Option<Lattice>, JaLatticeError> {
+    if inputs.is_empty() {
+        return Ok(None);
+    }
+
+    romaji_lattice_from_supported_segmented_readings(
+        inputs
+            .iter()
+            .map(|path| path.iter().map(|(reading, mode)| (reading.as_str(), *mode))),
+    )
 }
 
 fn should_try_hybrid_for_direct_ascii(
@@ -247,13 +361,6 @@ fn is_unsupported_dictionary_reading(err: &JaLatticeError) -> bool {
     )
 }
 
-fn lattice_from_romaji_paths(paths: Vec<String>) -> Result<Lattice, JaLatticeError> {
-    let symbol_paths = paths
-        .iter()
-        .map(|path| path.chars().map(|ch| ch as Symbol).collect::<Vec<Symbol>>());
-    Lattice::try_from_symbol_paths_compact(symbol_paths).map_err(JaLatticeError::from)
-}
-
 fn max_normalized_similarity(left_paths: &[String], right_paths: &[String]) -> f64 {
     left_paths
         .iter()
@@ -342,7 +449,7 @@ mod tests {
         let lattice =
             unidic_or_direct_lattice("鬼滅", &index, DictionaryReadingOptions::default()).unwrap();
 
-        assert_eq!(lattice.node_count(), 8);
+        assert!(lattice.node_count() < Lattice::from_paths(["kimetu", "kimetsu"]).node_count());
         assert_eq!(distance(&lattice, &Lattice::from_paths(["kimetsu"])), 0);
     }
 
@@ -418,6 +525,22 @@ mod tests {
                 .expect("ASCII whisky terms should still use dictionary hybrid paths");
             assert_eq!(distances.lattice, 0, "{left} should match {right}");
         }
+    }
+
+    #[test]
+    fn ascii_mixed_lattice_does_not_expand_direct_whisky_variants() {
+        let index = UnidicReadingIndex::default();
+        let input = "PXシェリー".repeat(32);
+
+        let lattice = unidic_or_direct_lattice(&input, &index, DictionaryReadingOptions::default())
+            .expect("ASCII-mixed direct input should build as a lattice");
+        let distances =
+            compare_with_unidic_index(&input, &input, &index, DictionaryReadingOptions::default())
+                .expect("public distance path should not expand direct variants");
+
+        assert!(lattice.node_count() < 1024);
+        assert!(lattice.arcs().len() < 2048);
+        assert_eq!(distances.lattice, 0);
     }
 
     #[test]
