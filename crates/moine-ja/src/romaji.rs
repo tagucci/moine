@@ -1160,6 +1160,8 @@ fn variants_for(unit: &str) -> Option<&'static [&'static str]> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use moine_core::{distance, distance_with_trace, Lattice, Symbol};
 
     use super::*;
@@ -1171,6 +1173,45 @@ mod tests {
             .collect()
     }
 
+    fn enumerate_lattice_paths(lattice: &Lattice) -> BTreeSet<String> {
+        fn visit(
+            lattice: &Lattice,
+            node: usize,
+            current: &mut String,
+            paths: &mut BTreeSet<String>,
+        ) {
+            if node == lattice.end() {
+                paths.insert(current.clone());
+                return;
+            }
+
+            for arc in lattice.outgoing_arcs(node) {
+                let ch =
+                    char::from_u32(arc.symbol).expect("romaji lattice symbols should be chars");
+                current.push(ch);
+                visit(lattice, arc.dst, current, paths);
+                current.pop();
+            }
+        }
+
+        let mut paths = BTreeSet::new();
+        visit(lattice, lattice.start(), &mut String::new(), &mut paths);
+        paths
+    }
+
+    fn assert_lattice_matches_explicit_paths(input: &str) {
+        let lattice = romaji_lattice(input).expect("test input should build a direct lattice");
+        let expected = romaji_paths_with_limits(input, RomajiExpansionLimits::default())
+            .expect("test input should expand within the default limits")
+            .into_iter()
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            enumerate_lattice_paths(&lattice),
+            expected,
+            "input {input:?}"
+        );
+    }
+
     #[test]
     fn ascii_is_identity_path() {
         let lattice = romaji_lattice("chadougu").expect("ascii should build");
@@ -1178,6 +1219,28 @@ mod tests {
 
         assert_eq!(trace.distance, 0);
         assert_eq!(symbols_to_string(&trace.left_symbols()), "chadougu");
+    }
+
+    #[test]
+    fn direct_lattice_matches_explicit_paths_for_whisky_inputs() {
+        let units = ["シェ", "リ", "ン", "チャ", "ッ", "ー", "P", "X"];
+        for left in units {
+            assert_lattice_matches_explicit_paths(left);
+            for right in units {
+                assert_lattice_matches_explicit_paths(&format!("{left}{right}"));
+            }
+        }
+
+        for input in [
+            "シェリー",
+            "チャー",
+            "スコッチ",
+            "ウイスキー",
+            "ピーテッド",
+            "PXシェリー",
+        ] {
+            assert_lattice_matches_explicit_paths(input);
+        }
     }
 
     #[test]
