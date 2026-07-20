@@ -519,6 +519,12 @@ def test_ja_process_extract_distance_and_ratio(tmp_path):
     ) == ("axc", 1, 0)
     assert process.extract_one(
         "abc",
+        {"first": "axc", "second": "ayc"},
+        dictionary=dictionary,
+        scorer="ratio",
+    ) == ("axc", pytest.approx(2 / 3), "first")
+    assert process.extract_one(
+        "abc",
         ["axc", "ayc"],
         dictionary=dictionary,
         scorer="normalized_distance",

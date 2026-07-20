@@ -879,7 +879,7 @@ impl PyJapaneseDictionary {
         py.detach(move || {
             let query_paths = ja_path_sets(&queries, &self.index, options)?;
             let choice_paths = ja_path_sets(&choices, &self.index, options)?;
-            cdist_similarity_matrix(&query_paths, &choice_paths, score_cutoff)
+            cdist_similarity_matrix(query_paths, choice_paths, score_cutoff)
         })
     }
 
@@ -904,7 +904,7 @@ impl PyJapaneseDictionary {
         py.detach(move || {
             let query_paths = ja_path_sets(&queries, &self.index, options)?;
             let choice_paths = ja_path_sets(&choices, &self.index, options)?;
-            cdist_normalized_distance_matrix(&query_paths, &choice_paths, score_cutoff)
+            cdist_normalized_distance_matrix(query_paths, choice_paths, score_cutoff)
         })
     }
 }
@@ -1440,7 +1440,7 @@ impl PyChineseDictionary {
         py.detach(move || {
             let query_paths = zh_path_sets(&queries, &self.index, options)?;
             let choice_paths = zh_path_sets(&choices, &self.index, options)?;
-            cdist_similarity_matrix(&query_paths, &choice_paths, score_cutoff)
+            cdist_similarity_matrix(query_paths, choice_paths, score_cutoff)
         })
     }
 
@@ -1465,7 +1465,7 @@ impl PyChineseDictionary {
         py.detach(move || {
             let query_paths = zh_path_sets(&queries, &self.index, options)?;
             let choice_paths = zh_path_sets(&choices, &self.index, options)?;
-            cdist_normalized_distance_matrix(&query_paths, &choice_paths, score_cutoff)
+            cdist_normalized_distance_matrix(query_paths, choice_paths, score_cutoff)
         })
     }
 }
@@ -1826,14 +1826,39 @@ fn validate_paths(paths: &[String], argument_name: &'static str) -> PyResult<()>
 }
 
 fn max_normalized_similarity(left_paths: &[String], right_paths: &[String]) -> f64 {
-    left_paths
-        .iter()
-        .flat_map(|left| {
-            right_paths
-                .iter()
-                .map(move |right| raw_normalized_similarity_pair(left, right))
+    let left_paths = char_sets(left_paths);
+    let right_paths = char_sets(right_paths);
+    let mut workspace = StringDistanceWorkspace::new();
+    max_normalized_similarity_chars(&left_paths, &right_paths, &mut workspace)
+}
+
+fn max_normalized_similarity_chars(
+    left_paths: &[Vec<char>],
+    right_paths: &[Vec<char>],
+    workspace: &mut StringDistanceWorkspace,
+) -> f64 {
+    let mut best = 0.0;
+    for left in left_paths {
+        for right in right_paths {
+            best = f64::max(best, normalized_similarity_chars(left, right, workspace));
+            if best == 1.0 {
+                return best;
+            }
+        }
+    }
+    best
+}
+
+fn into_char_path_sets(path_sets: Vec<Vec<String>>) -> Vec<Vec<Vec<char>>> {
+    path_sets
+        .into_iter()
+        .map(|paths| {
+            paths
+                .into_iter()
+                .map(|path| path.chars().collect())
+                .collect()
         })
-        .fold(0.0, f64::max)
+        .collect()
 }
 
 fn effective_partial_span_limit(
@@ -2346,17 +2371,23 @@ fn cdist_combined_distance_matrix(
 }
 
 fn cdist_similarity_matrix(
-    query_paths: &[Vec<String>],
-    choice_paths: &[Vec<String>],
+    query_paths: Vec<Vec<String>>,
+    choice_paths: Vec<Vec<String>>,
     score_cutoff: Option<f64>,
 ) -> PyResult<Vec<Vec<f64>>> {
+    let query_paths = into_char_path_sets(query_paths);
+    let choice_paths = into_char_path_sets(choice_paths);
+    let mut workspace = StringDistanceWorkspace::new();
     query_paths
         .iter()
         .map(|query| {
             choice_paths
                 .iter()
                 .map(|choice| {
-                    apply_similarity_cutoff(max_normalized_similarity(query, choice), score_cutoff)
+                    apply_similarity_cutoff(
+                        max_normalized_similarity_chars(query, choice, &mut workspace),
+                        score_cutoff,
+                    )
                 })
                 .collect()
         })
@@ -2364,10 +2395,13 @@ fn cdist_similarity_matrix(
 }
 
 fn cdist_normalized_distance_matrix(
-    query_paths: &[Vec<String>],
-    choice_paths: &[Vec<String>],
+    query_paths: Vec<Vec<String>>,
+    choice_paths: Vec<Vec<String>>,
     score_cutoff: Option<f64>,
 ) -> PyResult<Vec<Vec<f64>>> {
+    let query_paths = into_char_path_sets(query_paths);
+    let choice_paths = into_char_path_sets(choice_paths);
+    let mut workspace = StringDistanceWorkspace::new();
     query_paths
         .iter()
         .map(|query| {
@@ -2375,7 +2409,7 @@ fn cdist_normalized_distance_matrix(
                 .iter()
                 .map(|choice| {
                     apply_normalized_distance_cutoff(
-                        1.0 - max_normalized_similarity(query, choice),
+                        1.0 - max_normalized_similarity_chars(query, choice, &mut workspace),
                         score_cutoff,
                     )
                 })

@@ -53,8 +53,8 @@ use std::sync::Arc;
 
 use fst::{Map, MapBuilder, Streamer};
 use moine_core::{
-    levenshtein_str, normalized_similarity_str, try_damerau_distance, try_damerau_levenshtein_str,
-    try_distance, DistanceError, Lattice,
+    levenshtein_str, normalized_similarity_from_distance, try_damerau_distance,
+    try_damerau_levenshtein_str, try_distance, DistanceError, Lattice, StringDistanceWorkspace,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -1601,14 +1601,33 @@ fn validate_pinyin_options(
 }
 
 fn max_normalized_similarity(left_paths: &[String], right_paths: &[String]) -> f64 {
-    left_paths
-        .iter()
-        .flat_map(|left| {
-            right_paths
-                .iter()
-                .map(move |right| normalized_similarity_str(left, right))
-        })
-        .fold(0.0, f64::max)
+    let left_paths = char_paths(left_paths);
+    let right_paths = char_paths(right_paths);
+    let mut workspace = StringDistanceWorkspace::new();
+    max_normalized_similarity_chars(&left_paths, &right_paths, &mut workspace)
+}
+
+fn char_paths(paths: &[String]) -> Vec<Vec<char>> {
+    paths.iter().map(|path| path.chars().collect()).collect()
+}
+
+fn max_normalized_similarity_chars(
+    left_paths: &[Vec<char>],
+    right_paths: &[Vec<char>],
+    workspace: &mut StringDistanceWorkspace,
+) -> f64 {
+    let mut best = 0.0;
+    for left in left_paths {
+        for right in right_paths {
+            let distance = workspace.levenshtein(left, right);
+            let similarity = normalized_similarity_from_distance(distance, left.len(), right.len());
+            best = f64::max(best, similarity);
+            if best == 1.0 {
+                return best;
+            }
+        }
+    }
+    best
 }
 
 fn compare_lattices(

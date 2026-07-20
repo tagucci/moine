@@ -432,6 +432,13 @@ cargo run -q -p moine-cli -- chinese-compare \
 callbacks, `score_hint`, and `workers` are
 intentionally outside the initial API.
 
+Dictionary-backed scoring applies the configured `max_paths`,
+`max_readings_per_segment`, `max_span_chars`, and `longest_only` controls before
+distance computation. A result is exact for the retained paths. When a cap or
+longest-only pruning removes candidates, the result is not a claim about an
+exhaustive expansion of every dictionary reading, and retained candidates are
+not ranked by linguistic probability or source cost.
+
 `moine.partial_ratio(...)`, `partial_distance(...)`, and
 `partial_alignment(...)` search bounded text spans for query-in-text matching.
 `partial_alignment` defaults to `metric="ratio"` and reports Python character

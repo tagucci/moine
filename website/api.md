@@ -188,6 +188,9 @@ Returns a query-by-choice matrix of scores.
 
 `max_readings_per_segment`, `max_span_chars`, `max_paths`, `longest_only`
 : Optional dictionary expansion controls. These require `lang` or `dictionary`.
+  If a limit prunes candidates, the returned score is exact for the retained
+  reading paths but may differ from an exhaustive score over all dictionary
+  readings. Retention order is deterministic, not frequency-ranked.
 
 ```python
 >>> import moine

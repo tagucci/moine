@@ -132,17 +132,33 @@ def extract_one(
     score_cutoff: Score | None = None,
     scorer_kwargs: Mapping[str, object] | None = None,
 ) -> ExtractResult | None:
-    results = extract(
-        query,
-        choices,
-        dictionary=dictionary,
-        scorers=scorers,
-        scorer=scorer,
-        limit=1,
-        score_cutoff=score_cutoff,
-        scorer_kwargs=scorer_kwargs,
-    )
-    return results[0] if results else None
+    reading_options = _reading_options(scorer_kwargs)
+    scorer_kind = _scorer_kind(scorer)
+    score_cutoff = _validate_score_cutoff(score_cutoff, scorer)
+    best: ExtractResult | None = None
+
+    for choice, key in _iter_choices(choices):
+        score = _score_choice(
+            query,
+            choice,
+            dictionary=dictionary,
+            scorers=scorers,
+            scorer=scorer,
+            score_cutoff=score_cutoff,
+            reading_options=reading_options,
+        )
+        if not _passes_score_cutoff(score, score_cutoff, scorer_kind):
+            continue
+        if best is None or _is_better_score(score, best[1], scorer_kind):
+            best = (choice, score, key)
+
+    return best
+
+
+def _is_better_score(score: Score, best_score: Score, scorer_kind: ScorerKind) -> bool:
+    if scorer_kind == "distance":
+        return score < best_score
+    return score > best_score
 
 
 def _iter_choices(choices: Choices) -> Iterable[tuple[str, ChoiceKey]]:
