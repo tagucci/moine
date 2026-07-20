@@ -20,6 +20,7 @@ This checklist records the current pre-1.0 release boundary for `moine`.
 Run before publishing a release candidate:
 
 ```bash
+python3 scripts/check-version-sync.py --tag v0.2.2
 cargo fmt --check
 cargo +1.86.0 check --workspace --all-targets --all-features
 cargo clippy --all-targets --all-features -- -D warnings
@@ -133,7 +134,7 @@ these exact names:
 - `moine-cedict-20260520-v0.1.1/SHA256SUMS`
 
 These dictionary release tags are artifact-specific and do not need to match
-the package version when the generated payloads are unchanged. For the `v0.2.1`
+the package version when the generated payloads are unchanged. For the `v0.2.2`
 package release, the current public downloader targets are UniDic-CWJ `v0.1.1`,
 SudachiDict-full `v0.2.0`, and CC-CEDICT `v0.1.1`.
 
