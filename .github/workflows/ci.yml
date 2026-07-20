@@ -82,6 +82,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - name: Check package version consistency
+        run: python3 scripts/check-version-sync.py
       - name: Install uv and set Python
         uses: astral-sh/setup-uv@v8.1.0
         with:
