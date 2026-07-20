@@ -164,6 +164,12 @@ Damerau-Levenshtein and LPED, distance metrics are smaller-is-better, `ratio`
 and `normalized_similarity` are in `0.0..=1.0` and larger-is-better, and
 `score_cutoff` filters in the RapidFuzz style.
 
+Dictionary reading expansion is bounded by controls such as `max_paths`,
+`max_readings_per_segment`, and `longest_only`. When those controls prune
+candidates, a score is exact for the retained reading paths but may differ from
+an exhaustive score over every dictionary reading. Candidate retention follows
+deterministic expansion order; it is not a frequency or probability ranking.
+
 ## Command Line
 
 Most users only need the public runtime commands:
