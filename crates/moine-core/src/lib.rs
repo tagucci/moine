@@ -1675,6 +1675,9 @@ fn trim_common_affixes<'a>(left: &'a [char], right: &'a [char]) -> (&'a [char], 
 }
 
 #[cfg(test)]
+mod property_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
