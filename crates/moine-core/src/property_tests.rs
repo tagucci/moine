@@ -45,6 +45,34 @@ fn reference_lattice_distance(left_paths: &[Vec<Symbol>], right_paths: &[Vec<Sym
         .expect("generated path sets are non-empty")
 }
 
+#[test]
+fn singleton_empty_path_has_consistent_distance_trace_and_cutoff() {
+    let empty = Lattice::from_symbol_paths([Vec::<Symbol>::new()]);
+    let one_symbol = Lattice::from_symbol_paths([vec![0]]);
+
+    assert_eq!(distance(&empty, &empty), 0);
+    assert_eq!(distance(&empty, &one_symbol), 1);
+    assert_eq!(distance(&one_symbol, &empty), 1);
+
+    let trace = distance_with_trace(&empty, &one_symbol);
+    assert_eq!(trace.distance, 1);
+    assert!(trace.left_symbols().is_empty());
+    assert_eq!(trace.right_symbols(), vec![0]);
+    assert_eq!(trace.steps.len(), 1);
+    assert_eq!(trace.steps[0].op, EditOp::Insert);
+
+    assert_eq!(
+        try_distance_with_cutoff(&empty, &one_symbol, 0).unwrap(),
+        None,
+    );
+    assert_eq!(
+        try_distance_with_cutoff(&empty, &one_symbol, 1).unwrap(),
+        Some(1),
+    );
+    assert!(!within_distance(&empty, &one_symbol, 0));
+    assert!(within_distance(&empty, &one_symbol, 1));
+}
+
 proptest! {
     #[test]
     fn lattice_distance_matches_minimum_path_pair(
@@ -110,6 +138,7 @@ proptest! {
         left_paths in valid_path_set(),
         right_paths in valid_path_set(),
     ) {
+        let expected = reference_lattice_distance(&left_paths, &right_paths);
         let left = Lattice::from_symbol_paths_compact(left_paths.clone());
         let right = Lattice::from_symbol_paths_compact(right_paths.clone());
         let trace = distance_with_trace(&left, &right);
@@ -119,7 +148,7 @@ proptest! {
             .filter(|step| step.op != EditOp::Match)
             .count();
 
-        prop_assert_eq!(trace.distance, distance(&left, &right));
+        prop_assert_eq!(trace.distance, expected);
         prop_assert_eq!(edit_cost, trace.distance);
         prop_assert!(left_paths.contains(&trace.left_symbols()));
         prop_assert!(right_paths.contains(&trace.right_symbols()));
