@@ -16,3 +16,6 @@ include = ["Cargo.toml", "README.md", "src/**/*.rs"]
 [lib]
 name = "moine_core"
 path = "src/lib.rs"
+
+[dev-dependencies]
+proptest = { version = "1.11.0", default-features = false, features = ["std"] }
