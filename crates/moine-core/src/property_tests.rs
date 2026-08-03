@@ -45,32 +45,39 @@ fn reference_lattice_distance(left_paths: &[Vec<Symbol>], right_paths: &[Vec<Sym
         .expect("generated path sets are non-empty")
 }
 
+fn assert_single_edit(
+    left: &Lattice,
+    right: &Lattice,
+    expected_left: &[Symbol],
+    expected_right: &[Symbol],
+    expected_op: EditOp,
+) {
+    assert_eq!(distance(left, right), 1);
+
+    let trace = distance_with_trace(left, right);
+    assert_eq!(trace.distance, 1);
+    assert_eq!(trace.left_symbols().as_slice(), expected_left);
+    assert_eq!(trace.right_symbols().as_slice(), expected_right);
+    assert_eq!(trace.steps.len(), 1);
+    assert_eq!(trace.steps[0].op, expected_op);
+
+    assert_eq!(try_distance_with_cutoff(left, right, 0).unwrap(), None);
+    assert_eq!(try_distance_with_cutoff(left, right, 1).unwrap(), Some(1));
+    assert!(!within_distance(left, right, 0));
+    assert!(within_distance(left, right, 1));
+}
+
 #[test]
-fn singleton_empty_path_has_consistent_distance_trace_and_cutoff() {
-    let empty = Lattice::from_symbol_paths([Vec::<Symbol>::new()]);
+fn singleton_empty_paths_have_consistent_distance_trace_and_cutoff() {
+    let plain_empty = Lattice::from_symbol_paths([Vec::<Symbol>::new()]);
+    let compact_empty = Lattice::from_symbol_paths_compact([Vec::<Symbol>::new()]);
     let one_symbol = Lattice::from_symbol_paths([vec![0]]);
 
-    assert_eq!(distance(&empty, &empty), 0);
-    assert_eq!(distance(&empty, &one_symbol), 1);
-    assert_eq!(distance(&one_symbol, &empty), 1);
-
-    let trace = distance_with_trace(&empty, &one_symbol);
-    assert_eq!(trace.distance, 1);
-    assert!(trace.left_symbols().is_empty());
-    assert_eq!(trace.right_symbols(), vec![0]);
-    assert_eq!(trace.steps.len(), 1);
-    assert_eq!(trace.steps[0].op, EditOp::Insert);
-
-    assert_eq!(
-        try_distance_with_cutoff(&empty, &one_symbol, 0).unwrap(),
-        None,
-    );
-    assert_eq!(
-        try_distance_with_cutoff(&empty, &one_symbol, 1).unwrap(),
-        Some(1),
-    );
-    assert!(!within_distance(&empty, &one_symbol, 0));
-    assert!(within_distance(&empty, &one_symbol, 1));
+    for empty in [&plain_empty, &compact_empty] {
+        assert_eq!(distance(empty, empty), 0);
+        assert_single_edit(empty, &one_symbol, &[], &[0], EditOp::Insert);
+        assert_single_edit(&one_symbol, empty, &[0], &[], EditOp::Delete);
+    }
 }
 
 proptest! {
