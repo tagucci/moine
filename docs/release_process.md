@@ -126,17 +126,19 @@ these exact names:
 - `unidic-cwj-202512-v0.1.1/moine-unidic-cwj-202512.tar.gz`
 - `unidic-cwj-202512-v0.1.1/moine-unidic-cwj-202512.tar.zst`
 - `unidic-cwj-202512-v0.1.1/SHA256SUMS`
-- `moine-sudachi-full-20260428-v0.2.0/moine-sudachi-full-20260428.tar.gz`
-- `moine-sudachi-full-20260428-v0.2.0/moine-sudachi-full-20260428.tar.zst`
-- `moine-sudachi-full-20260428-v0.2.0/SHA256SUMS`
+- `moine-sudachi-full-20260723-v0.2.0/moine-sudachi-full-20260723.tar.gz`
+- `moine-sudachi-full-20260723-v0.2.0/moine-sudachi-full-20260723.tar.zst`
+- `moine-sudachi-full-20260723-v0.2.0/SHA256SUMS`
 - `moine-cedict-20260520-v0.1.1/moine-cedict-20260520.tar.gz`
 - `moine-cedict-20260520-v0.1.1/moine-cedict-20260520.tar.zst`
 - `moine-cedict-20260520-v0.1.1/SHA256SUMS`
 
 These dictionary release tags are artifact-specific and do not need to match
-the package version when the generated payloads are unchanged. For the `v0.2.2`
-package release, the current public downloader targets are UniDic-CWJ `v0.1.1`,
-SudachiDict-full `v0.2.0`, and CC-CEDICT `v0.1.1`.
+the package version. The next package release targets UniDic-CWJ
+`202512-v0.1.1`,
+SudachiDict-full `20260723-v0.2.0`, and CC-CEDICT `20260520-v0.1.1`.
+Publish and verify the new Sudachi artifact before releasing packages with
+these downloader defaults.
 
 The release workflow checks these assets before publishing the Python
 distribution on tag pushes. Keep the workflow asset list, Rust downloader specs,

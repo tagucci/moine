@@ -58,14 +58,14 @@ ARTIFACT_SPECS: dict[Language, ArtifactSpec] = {
     "ja-sudachi": ArtifactSpec(
         lang="ja-sudachi",
         label="Japanese SudachiDict-full",
-        artifact_name="moine-sudachi-full-20260428",
-        archive_name="moine-sudachi-full-20260428.tar.gz",
+        artifact_name="moine-sudachi-full-20260723",
+        archive_name="moine-sudachi-full-20260723.tar.gz",
         archive_url=(
             f"{_RELEASE_BASE_URL}/"
-            "moine-sudachi-full-20260428-v0.2.0/"
-            "moine-sudachi-full-20260428.tar.gz"
+            "moine-sudachi-full-20260723-v0.2.0/"
+            "moine-sudachi-full-20260723.tar.gz"
         ),
-        checksum_url=f"{_RELEASE_BASE_URL}/moine-sudachi-full-20260428-v0.2.0/SHA256SUMS",
+        checksum_url=f"{_RELEASE_BASE_URL}/moine-sudachi-full-20260723-v0.2.0/SHA256SUMS",
     ),
     "zh": ArtifactSpec(
         lang="zh",

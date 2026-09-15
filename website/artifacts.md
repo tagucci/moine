@@ -69,7 +69,7 @@ dictionary = Dictionary.load_bundle("/path/to/moine-unidic-cwj-202512")
 ```python
 from moine.ja import Dictionary
 
-dictionary = Dictionary.load_bundle("/path/to/moine-sudachi-full-20260428")
+dictionary = Dictionary.load_bundle("/path/to/moine-sudachi-full-20260723")
 ```
 
 ```python

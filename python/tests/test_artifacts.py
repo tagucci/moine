@@ -102,14 +102,14 @@ def write_archive(tmp_path: Path, *, insatsu_reading: str = "インサツ") -> P
 
 
 def write_sudachi_archive(tmp_path: Path) -> Path:
-    bundle_dir = tmp_path / "sudachi-bundle" / "moine-sudachi-full-20260428-test"
+    bundle_dir = tmp_path / "sudachi-bundle" / "moine-sudachi-full-20260723-test"
     write_ja_bundle(
         bundle_dir,
-        artifact_name="moine-sudachi-full-20260428-test",
+        artifact_name="moine-sudachi-full-20260723-test",
         source_name="SudachiDict",
         reading_field="sudachi-reading",
     )
-    archive = tmp_path / "moine-sudachi-full-20260428-test.tar.gz"
+    archive = tmp_path / "moine-sudachi-full-20260723-test.tar.gz"
     with tarfile.open(archive, "w:gz") as tar:
         tar.add(bundle_dir, arcname=bundle_dir.name)
     return archive
@@ -119,13 +119,13 @@ def test_default_artifact_urls_and_japanese_aliases():
     assert ARTIFACT_SPECS["ja"].artifact_name == ARTIFACT_SPECS["ja-unidic"].artifact_name
     assert "unidic-cwj-202512-v0.1.1" in ARTIFACT_SPECS["ja"].archive_url
     assert "unidic-cwj-202512-v0.1.1" in ARTIFACT_SPECS["ja-unidic"].archive_url
-    assert "moine-sudachi-full-20260428-v0.2.0" in ARTIFACT_SPECS["ja-sudachi"].archive_url
+    assert "moine-sudachi-full-20260723-v0.2.0" in ARTIFACT_SPECS["ja-sudachi"].archive_url
     assert "moine-cedict-20260520-v0.1.1" in ARTIFACT_SPECS["zh"].archive_url
     assert ARTIFACT_SPECS["ja"].checksum_url is not None
     assert ARTIFACT_SPECS["ja"].checksum_url.endswith("/unidic-cwj-202512-v0.1.1/SHA256SUMS")
     assert ARTIFACT_SPECS["ja-sudachi"].checksum_url is not None
     assert ARTIFACT_SPECS["ja-sudachi"].checksum_url.endswith(
-        "/moine-sudachi-full-20260428-v0.2.0/SHA256SUMS"
+        "/moine-sudachi-full-20260723-v0.2.0/SHA256SUMS"
     )
     assert ARTIFACT_SPECS["zh"].checksum_url is not None
     assert ARTIFACT_SPECS["zh"].checksum_url.endswith("/moine-cedict-20260520-v0.1.1/SHA256SUMS")
@@ -295,7 +295,7 @@ def test_sudachi_download_where_and_cache_lookup(tmp_path, monkeypatch, capsys):
         )
         == 0
     )
-    installed = cache_dir / "moine-sudachi-full-20260428-test"
+    installed = cache_dir / "moine-sudachi-full-20260723-test"
     assert installed.is_dir()
     assert capsys.readouterr().out.strip() == str(installed)
 
@@ -332,10 +332,10 @@ def test_download_rejects_japanese_selector_mismatch(tmp_path):
 
 
 def test_japanese_env_path_must_match_requested_selector(tmp_path, monkeypatch):
-    sudachi_bundle = tmp_path / "moine-sudachi-full-20260428-test"
+    sudachi_bundle = tmp_path / "moine-sudachi-full-20260723-test"
     write_ja_bundle(
         sudachi_bundle,
-        artifact_name="moine-sudachi-full-20260428-test",
+        artifact_name="moine-sudachi-full-20260723-test",
         source_name="SudachiDict",
         reading_field="sudachi-reading",
     )
@@ -362,7 +362,7 @@ def test_japanese_explicit_path_must_match_requested_selector(tmp_path):
 
 def test_japanese_default_cache_prefers_unidic_over_sudachi(tmp_path, monkeypatch):
     cache_dir = tmp_path / "cache"
-    write_ja_bundle(cache_dir / "moine-sudachi-full-20260428-test", insatsu_reading="アウト")
+    write_ja_bundle(cache_dir / "moine-sudachi-full-20260723-test", insatsu_reading="アウト")
     write_ja_bundle(cache_dir / "moine-unidic-cwj-202512-test")
 
     monkeypatch.setenv("MOINE_CACHE_DIR", str(cache_dir))
@@ -474,7 +474,7 @@ def test_default_artifact_specs_point_to_current_releases():
     assert (
         ARTIFACT_SPECS["ja-sudachi"].archive_url
         == "https://github.com/tagucci/moine/releases/download/"
-        "moine-sudachi-full-20260428-v0.2.0/moine-sudachi-full-20260428.tar.gz"
+        "moine-sudachi-full-20260723-v0.2.0/moine-sudachi-full-20260723.tar.gz"
     )
     assert (
         ARTIFACT_SPECS["zh"].archive_url == "https://github.com/tagucci/moine/releases/download/"
