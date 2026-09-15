@@ -20,7 +20,7 @@ This checklist records the current pre-1.0 release boundary for `moine`.
 Run before publishing a release candidate:
 
 ```bash
-python3 scripts/check-version-sync.py --tag v0.2.2
+python3 scripts/check-version-sync.py --tag v0.2.3
 cargo fmt --check
 cargo +1.86.0 check --workspace --all-targets --all-features
 cargo clippy --all-targets --all-features -- -D warnings
@@ -134,11 +134,11 @@ these exact names:
 - `moine-cedict-20260520-v0.1.1/SHA256SUMS`
 
 These dictionary release tags are artifact-specific and do not need to match
-the package version. The next package release targets UniDic-CWJ
+the package version. The `v0.2.3` package release targets UniDic-CWJ
 `202512-v0.1.1`,
 SudachiDict-full `20260723-v0.2.0`, and CC-CEDICT `20260520-v0.1.1`.
-Publish and verify the new Sudachi artifact before releasing packages with
-these downloader defaults.
+The Sudachi artifact is published, and both Rust and Python downloaders have
+been verified against its public URLs using empty caches.
 
 The release workflow checks these assets before publishing the Python
 distribution on tag pushes. Keep the workflow asset list, Rust downloader specs,
