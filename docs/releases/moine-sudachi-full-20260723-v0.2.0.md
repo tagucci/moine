@@ -8,10 +8,11 @@ this new dictionary release.
 
 ## Publication
 
-Prepared locally. Publish these assets and `SHA256SUMS` under this release tag
-before publishing a package with the updated `ja-sudachi` defaults. After
-publication, smoke-test both default downloaders from empty caches without URL
-overrides, following `docs/release_process.md`.
+Published as [moine-sudachi-full-20260723-v0.2.0](https://github.com/tagucci/moine/releases/tag/moine-sudachi-full-20260723-v0.2.0).
+Both archives match the published `SHA256SUMS`. Updated Rust and Python
+downloaders installed the dictionary from the public URLs into separate empty
+caches without URL overrides. Both returned LPED `0` for
+`すまーとのうぎょう` compared with `スマート農業`.
 
 ## Assets
 
@@ -83,4 +84,4 @@ The generated bundle passed file-digest and canonical-checksum verification.
 Both Rust and Python downloaders installed the gzip archive into separate empty
 caches using local archive and checksum-manifest overrides. Comparison of
 `すまーとのうぎょう` with `スマート農業` returned LPED `0`.
-These checks do not verify the unpublished GitHub download URLs.
+Public-URL verification is recorded above.
