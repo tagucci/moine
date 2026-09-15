@@ -104,9 +104,9 @@ SudachiDict release. This mirrors the upstream
 
 ```bash
 cargo run -q -p moine-cli -- sudachi-artifact-bundle \
-  --lex-csv /tmp/sudachi-raw-20260428/full_lex.csv \
-  --source-version 20260428 \
-  --artifact-name moine-sudachi-full-20260428 \
+  --lex-csv /tmp/sudachi-raw-20260723/full_lex.csv \
+  --source-version 20260723 \
+  --artifact-name moine-sudachi-full-20260723 \
   --payload-format indexed \
   --max-readings-per-surface 16 \
   --exclude-unsupported-readings \
@@ -116,7 +116,7 @@ cargo run -q -p moine-cli -- sudachi-artifact-bundle \
   --longest-only \
   --license-file /path/to/SudachiDict/LICENSE-2.0.txt \
   --legal-file /path/to/SudachiDict/LEGAL \
-  --output-dir dist/moine-sudachi-full-20260428
+  --output-dir dist/moine-sudachi-full-20260723
 ```
 
 For release assets, use the checked wrapper so bundle generation,
@@ -125,8 +125,8 @@ consistent with the UniDic and CC-CEDICT release paths:
 
 ```bash
 scripts/release-sudachi-full.sh \
-  --lex-csv /tmp/sudachi-raw-20260428/full_lex.csv \
-  --source-version 20260428 \
+  --lex-csv /tmp/sudachi-raw-20260723/full_lex.csv \
+  --source-version 20260723 \
   --license-file /path/to/SudachiDict/LICENSE-2.0.txt \
   --legal-file /path/to/SudachiDict/LEGAL
 ```
@@ -139,10 +139,8 @@ paths whose readings cannot be converted to romaji; release artifacts can also
 omit those readings up front with `--exclude-unsupported-readings`.
 
 Sudachi release metadata uses `max_span_chars: 24` as the default query window.
-With the 20260428 full artifact filters, this leaves a small tail of lookup
-keys longer than 24 characters outside the default expansion path. They include
-long legal names, long title/artist strings, and unusually long phrase-like
-entries. Users who need those exact entries can pass a larger `max_span_chars`
+Dictionary keys longer than 24 characters remain outside the default
+expansion path. Users who need those exact entries can pass a larger `max_span_chars`
 value when comparing or loading through higher-level APIs.
 
 ## Payload
@@ -623,24 +621,24 @@ should be the all-three-file Full source build described by the upstream
 
 ```bash
 scripts/release-sudachi-full.sh \
-  --lex-csv /tmp/sudachi-raw-20260428/full_lex.csv \
-  --source-version 20260428 \
+  --lex-csv /tmp/sudachi-raw-20260723/full_lex.csv \
+  --source-version 20260723 \
   --license-file /path/to/SudachiDict/LICENSE-2.0.txt \
   --legal-file /path/to/SudachiDict/LEGAL \
   --compression gzip
 
 target/release/moine unidic-artifact-archive \
-  --metadata dist/moine-sudachi-full-20260428/metadata.yaml \
-  --output dist/moine-sudachi-full-20260428.tar.zst \
+  --metadata dist/moine-sudachi-full-20260723/metadata.yaml \
+  --output dist/moine-sudachi-full-20260723.tar.zst \
   --compression zstd
 ```
 
 Release outputs:
 
 ```text
-dist/moine-sudachi-full-20260428/
-dist/moine-sudachi-full-20260428.tar.gz
-dist/moine-sudachi-full-20260428.tar.zst
+dist/moine-sudachi-full-20260723/
+dist/moine-sudachi-full-20260723.tar.gz
+dist/moine-sudachi-full-20260723.tar.zst
 ```
 
 The checked CC-CEDICT recipe mirrors the same archive boundary for the first

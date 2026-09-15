@@ -144,21 +144,26 @@ files." Download the three raw lexicon files from the same release and
 concatenate them to build a full-equivalent CSV:
 
 ```bash
-mkdir -p /tmp/sudachi-raw-20260428
+mkdir -p /tmp/sudachi-raw-20260723
 
-curl -L -o /tmp/sudachi-raw-20260428/small_lex.zip \
-  http://sudachi.s3-website-ap-northeast-1.amazonaws.com/sudachidict-raw/20260428/small_lex.zip
-curl -L -o /tmp/sudachi-raw-20260428/core_lex.zip \
-  http://sudachi.s3-website-ap-northeast-1.amazonaws.com/sudachidict-raw/20260428/core_lex.zip
-curl -L -o /tmp/sudachi-raw-20260428/notcore_lex.zip \
-  http://sudachi.s3-website-ap-northeast-1.amazonaws.com/sudachidict-raw/20260428/notcore_lex.zip
+curl -fL -o /tmp/sudachi-raw-20260723/small_lex.zip \
+  https://sudachi.s3.ap-northeast-1.amazonaws.com/sudachidict-raw/20260723/small_lex.zip
+curl -fL -o /tmp/sudachi-raw-20260723/core_lex.zip \
+  https://sudachi.s3.ap-northeast-1.amazonaws.com/sudachidict-raw/20260723/core_lex.zip
+curl -fL -o /tmp/sudachi-raw-20260723/notcore_lex.zip \
+  https://sudachi.s3.ap-northeast-1.amazonaws.com/sudachidict-raw/20260723/notcore_lex.zip
 
-unzip -p /tmp/sudachi-raw-20260428/small_lex.zip small_lex.csv \
-  > /tmp/sudachi-raw-20260428/full_lex.csv
-unzip -p /tmp/sudachi-raw-20260428/core_lex.zip core_lex.csv \
-  >> /tmp/sudachi-raw-20260428/full_lex.csv
-unzip -p /tmp/sudachi-raw-20260428/notcore_lex.zip notcore_lex.csv \
-  >> /tmp/sudachi-raw-20260428/full_lex.csv
+curl -fL -o /tmp/sudachi-raw-20260723/LICENSE-2.0.txt \
+  https://raw.githubusercontent.com/WorksApplications/SudachiDict/v20260723/LICENSE-2.0.txt
+curl -fL -o /tmp/sudachi-raw-20260723/LEGAL \
+  https://raw.githubusercontent.com/WorksApplications/SudachiDict/v20260723/LEGAL
+
+unzip -p /tmp/sudachi-raw-20260723/small_lex.zip small_lex.csv \
+  > /tmp/sudachi-raw-20260723/full_lex.csv
+unzip -p /tmp/sudachi-raw-20260723/core_lex.zip core_lex.csv \
+  >> /tmp/sudachi-raw-20260723/full_lex.csv
+unzip -p /tmp/sudachi-raw-20260723/notcore_lex.zip notcore_lex.csv \
+  >> /tmp/sudachi-raw-20260723/full_lex.csv
 ```
 
 Inspect Sudachi readings for a surface form:
@@ -166,7 +171,7 @@ Inspect Sudachi readings for a surface form:
 ```bash
 cargo run -q -p moine-cli -- sudachi-csv-readings \
   --surface "鬼滅の刃" \
-  --lex-csv /tmp/sudachi-raw-20260428/full_lex.csv \
+  --lex-csv /tmp/sudachi-raw-20260723/full_lex.csv \
   --max-readings-per-surface 16
 ```
 
@@ -176,7 +181,7 @@ Compare with Sudachi raw CSV directly:
 cargo run -q -p moine-cli -- compare \
   --left "きめつのやいば" \
   --right "鬼滅の刃" \
-  --sudachi-lex-csv /tmp/sudachi-raw-20260428/full_lex.csv \
+  --sudachi-lex-csv /tmp/sudachi-raw-20260723/full_lex.csv \
   --max-readings-per-surface 16 \
   --max-readings-per-segment 16 \
   --max-paths 128 \
@@ -189,7 +194,7 @@ Render the same kind of comparison as a romaji lattice graph:
 cargo run -q -p moine-cli -- compare \
   --left "呪術廻戦" \
   --right "ジュジュツカイセン" \
-  --sudachi-lex-csv /tmp/sudachi-raw-20260428/full_lex.csv \
+  --sudachi-lex-csv /tmp/sudachi-raw-20260723/full_lex.csv \
   --max-readings-per-surface 16 \
   --max-readings-per-segment 16 \
   --max-paths 128 \
@@ -275,9 +280,9 @@ for Full dictionaries, which requires all three raw source files:
 
 ```bash
 cargo run -q -p moine-cli -- sudachi-artifact-bundle \
-  --lex-csv /tmp/sudachi-raw-20260428/full_lex.csv \
-  --source-version 20260428 \
-  --artifact-name moine-sudachi-full-20260428 \
+  --lex-csv /tmp/sudachi-raw-20260723/full_lex.csv \
+  --source-version 20260723 \
+  --artifact-name moine-sudachi-full-20260723 \
   --payload-format indexed \
   --max-readings-per-surface 16 \
   --exclude-unsupported-readings \
@@ -285,9 +290,9 @@ cargo run -q -p moine-cli -- sudachi-artifact-bundle \
   --max-span-chars 24 \
   --max-paths 128 \
   --longest-only \
-  --license-file /path/to/SudachiDict/LICENSE-2.0.txt \
-  --legal-file /path/to/SudachiDict/LEGAL \
-  --output-dir dist/moine-sudachi-full-20260428
+  --license-file /tmp/sudachi-raw-20260723/LICENSE-2.0.txt \
+  --legal-file /tmp/sudachi-raw-20260723/LEGAL \
+  --output-dir dist/moine-sudachi-full-20260723
 ```
 
 `--license-file` and `--legal-file` are required so the generated bundle
@@ -300,17 +305,17 @@ commands operate on the generated metadata:
 
 ```bash
 cargo run -q -p moine-cli -- unidic-artifact-verify \
-  --metadata dist/moine-sudachi-full-20260428/metadata.yaml
+  --metadata dist/moine-sudachi-full-20260723/metadata.yaml
 ```
 
 For release assets, prefer the checked wrapper:
 
 ```bash
 scripts/release-sudachi-full.sh \
-  --lex-csv /tmp/sudachi-raw-20260428/full_lex.csv \
-  --source-version 20260428 \
-  --license-file /path/to/SudachiDict/LICENSE-2.0.txt \
-  --legal-file /path/to/SudachiDict/LEGAL
+  --lex-csv /tmp/sudachi-raw-20260723/full_lex.csv \
+  --source-version 20260723 \
+  --license-file /tmp/sudachi-raw-20260723/LICENSE-2.0.txt \
+  --legal-file /tmp/sudachi-raw-20260723/LEGAL
 ```
 
 Use `--compression zstd` when preparing the `.tar.zst` release asset directly
@@ -318,10 +323,10 @@ from the raw Sudachi CSV:
 
 ```bash
 scripts/release-sudachi-full.sh \
-  --lex-csv /tmp/sudachi-raw-20260428/full_lex.csv \
-  --source-version 20260428 \
-  --license-file /path/to/SudachiDict/LICENSE-2.0.txt \
-  --legal-file /path/to/SudachiDict/LEGAL \
+  --lex-csv /tmp/sudachi-raw-20260723/full_lex.csv \
+  --source-version 20260723 \
+  --license-file /tmp/sudachi-raw-20260723/LICENSE-2.0.txt \
+  --legal-file /tmp/sudachi-raw-20260723/LEGAL \
   --compression zstd
 ```
 

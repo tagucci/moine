@@ -32,9 +32,9 @@ environment overrides:
 USAGE
 }
 
-lex_csv="${LEX_CSV:-/tmp/sudachi-raw-20260428/full_lex.csv}"
-source_version="${SOURCE_VERSION:-20260428}"
-artifact_name="${ARTIFACT_NAME:-moine-sudachi-full-20260428}"
+lex_csv="${LEX_CSV:-/tmp/sudachi-raw-20260723/full_lex.csv}"
+source_version="${SOURCE_VERSION:-20260723}"
+artifact_name="${ARTIFACT_NAME:-moine-sudachi-full-20260723}"
 dist_dir="${DIST_DIR:-dist}"
 license_file="${LICENSE_FILE:-}"
 legal_file="${LEGAL_FILE:-}"

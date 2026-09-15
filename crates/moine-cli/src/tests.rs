@@ -117,19 +117,19 @@ fn parses_sudachi_download_options() {
     let options = DownloadCliOptions::parse(vec!["ja-sudachi".to_string()]).unwrap();
 
     assert_eq!(options.spec.language, ArtifactLanguage::JapaneseSudachi);
-    assert_eq!(options.spec.artifact_name, "moine-sudachi-full-20260428");
+    assert_eq!(options.spec.artifact_name, "moine-sudachi-full-20260723");
     assert_eq!(
         options.spec.archive_name,
-        "moine-sudachi-full-20260428.tar.gz"
+        "moine-sudachi-full-20260723.tar.gz"
     );
     assert!(options
         .spec
         .archive_url
-        .contains("moine-sudachi-full-20260428-v0.2.0"));
+        .contains("moine-sudachi-full-20260723-v0.2.0"));
     assert!(options
         .spec
         .checksum_url
-        .is_some_and(|url| url.contains("moine-sudachi-full-20260428-v0.2.0/SHA256SUMS")));
+        .is_some_and(|url| url.contains("moine-sudachi-full-20260723-v0.2.0/SHA256SUMS")));
 }
 
 #[test]
@@ -165,13 +165,13 @@ fn default_download_specs_point_to_current_artifact_releases() {
     assert!(ja
         .checksum_url
         .is_some_and(|url| url.contains("unidic-cwj-202512-v0.1.1/SHA256SUMS")));
-    assert_eq!(sudachi.artifact_name, "moine-sudachi-full-20260428");
+    assert_eq!(sudachi.artifact_name, "moine-sudachi-full-20260723");
     assert!(sudachi
         .archive_url
-        .contains("moine-sudachi-full-20260428-v0.2.0/moine-sudachi-full-20260428.tar.gz"));
+        .contains("moine-sudachi-full-20260723-v0.2.0/moine-sudachi-full-20260723.tar.gz"));
     assert!(sudachi
         .checksum_url
-        .is_some_and(|url| url.contains("moine-sudachi-full-20260428-v0.2.0/SHA256SUMS")));
+        .is_some_and(|url| url.contains("moine-sudachi-full-20260723-v0.2.0/SHA256SUMS")));
     assert_eq!(zh.artifact_name, "moine-cedict-20260520");
     assert!(zh
         .archive_url
@@ -853,11 +853,11 @@ fn parses_sudachi_artifact_bundle_options() {
         "--lex-csv".to_string(),
         "sudachi/full_lex.csv".to_string(),
         "--source-version".to_string(),
-        "20260428".to_string(),
+        "20260723".to_string(),
         "--output-dir".to_string(),
-        "dist/moine-sudachi-full-20260428".to_string(),
+        "dist/moine-sudachi-full-20260723".to_string(),
         "--artifact-name".to_string(),
-        "moine-sudachi-full-20260428".to_string(),
+        "moine-sudachi-full-20260723".to_string(),
         "--license-file".to_string(),
         "SudachiDict/LICENSE-2.0.txt".to_string(),
         "--legal-file".to_string(),
@@ -872,9 +872,9 @@ fn parses_sudachi_artifact_bundle_options() {
     .unwrap();
 
     assert_eq!(options.lex_csv, "sudachi/full_lex.csv");
-    assert_eq!(options.source_version, "20260428");
-    assert_eq!(options.output_dir, "dist/moine-sudachi-full-20260428");
-    assert_eq!(options.artifact_name, "moine-sudachi-full-20260428");
+    assert_eq!(options.source_version, "20260723");
+    assert_eq!(options.output_dir, "dist/moine-sudachi-full-20260723");
+    assert_eq!(options.artifact_name, "moine-sudachi-full-20260723");
     assert_eq!(options.payload_format, ArtifactPayloadFormat::Indexed);
     assert_eq!(options.source_name, "SudachiDict");
     assert_eq!(
@@ -895,9 +895,9 @@ fn sudachi_artifact_bundle_requires_license_and_legal_files() {
         "--lex-csv",
         "sudachi/full_lex.csv",
         "--source-version",
-        "20260428",
+        "20260723",
         "--output-dir",
-        "dist/moine-sudachi-full-20260428",
+        "dist/moine-sudachi-full-20260723",
     ])
     .unwrap_err();
 
@@ -911,9 +911,9 @@ fn sudachi_artifact_bundle_requires_legal_file() {
         "--lex-csv",
         "sudachi/full_lex.csv",
         "--source-version",
-        "20260428",
+        "20260723",
         "--output-dir",
-        "dist/moine-sudachi-full-20260428",
+        "dist/moine-sudachi-full-20260723",
         "--license-file",
         "SudachiDict/LICENSE-2.0.txt",
     ])

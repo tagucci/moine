@@ -44,15 +44,15 @@ const DOWNLOAD_ARTIFACT_SPECS: &[DownloadArtifactSpec] = &[
     },
     DownloadArtifactSpec {
         language: ArtifactLanguage::JapaneseSudachi,
-        artifact_name: "moine-sudachi-full-20260428",
-        archive_name: "moine-sudachi-full-20260428.tar.gz",
+        artifact_name: "moine-sudachi-full-20260723",
+        archive_name: "moine-sudachi-full-20260723.tar.gz",
         archive_url: concat!(
             "https://github.com/tagucci/moine/releases/download/",
-            "moine-sudachi-full-20260428-v0.2.0/moine-sudachi-full-20260428.tar.gz"
+            "moine-sudachi-full-20260723-v0.2.0/moine-sudachi-full-20260723.tar.gz"
         ),
         checksum_url: Some(concat!(
             "https://github.com/tagucci/moine/releases/download/",
-            "moine-sudachi-full-20260428-v0.2.0/SHA256SUMS"
+            "moine-sudachi-full-20260723-v0.2.0/SHA256SUMS"
         )),
     },
     DownloadArtifactSpec {
